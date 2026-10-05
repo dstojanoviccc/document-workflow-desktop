@@ -22,6 +22,16 @@ public sealed class DocumentRecord
     public int CurrentVersion { get; private set; } = 1;
     public DateTime UpdatedAt { get; private set; } = DateTime.UtcNow;
     public WorkingCopyState Status { get; private set; } = WorkingCopyState.Available;
+    public void CheckOut()
+    {
+        if (Status != WorkingCopyState.Available) throw new InvalidOperationException("This document is already checked out.");
+        Status = WorkingCopyState.CheckedOut;
+    }
+    public void DiscardCheckout()
+    {
+        if (Status == WorkingCopyState.Available) throw new InvalidOperationException("This document has no active checkout.");
+        Status = WorkingCopyState.Available;
+    }
 }
 
 public sealed class DocumentVersion
@@ -43,6 +53,13 @@ public sealed class DocumentVersion
     public string FileHash { get; private set; } = "";
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
     public string ChangeNote { get; private set; } = "";
+    public void AttachDemoContent(string fileHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileHash);
+        if (VersionNumber != 1 || !ChangeNote.StartsWith("Demo metadata")) return;
+        FileHash = fileHash;
+        ChangeNote = "Initial generic demo file.";
+    }
 }
 
 public sealed class WorkingCopy
