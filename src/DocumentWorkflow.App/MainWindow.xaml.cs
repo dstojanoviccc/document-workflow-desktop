@@ -8,5 +8,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        // Activation is UI-specific; all reevaluation remains in application services.
+        Activated += async (_, _) => await viewModel.OnActivatedAsync();
     }
 }

@@ -51,6 +51,8 @@ public sealed class MainViewModel : ObservableViewModel
     private readonly IDocumentWorkflowService workflow;
     private readonly IUserDialogService dialogs;
     private readonly ILogger<MainViewModel> logger;
+    private bool initialized;
+    private bool activationPending;
     public MainViewModel(IDocumentWorkflowService workflow, IUserDialogService dialogs, ILogger<MainViewModel> logger)
     {
         this.workflow = workflow;
@@ -72,6 +74,7 @@ public sealed class MainViewModel : ObservableViewModel
     private async Task LoadAsync()
     {
         var documents = await workflow.ListAsync();
+        initialized = true;
         var selectedId = SelectedDocument?.Id;
         Documents.Clear();
         foreach (var document in documents) Documents.Add(new(document, ShowDetails, RunActionAsync, ReportError));
@@ -96,7 +99,20 @@ public sealed class MainViewModel : ObservableViewModel
                 : $"Loaded from SQLite • refreshed {DateTime.Now:HH:mm:ss}");
         }
         catch (Exception error) { ReportError(error); }
-        finally { Busy(false); }
+        finally { await FinishAsync(); }
+    }
+    public async Task OnActivatedAsync()
+    {
+        if (!initialized) return; // Initial startup has its own load.
+        if (IsBusy) { activationPending = true; return; }
+        await RefreshAsync();
+    }
+    private async Task FinishAsync()
+    {
+        Busy(false);
+        if (!activationPending) return;
+        activationPending = false;
+        await OnActivatedAsync();
     }
     private async Task RunActionAsync(DocumentListItemViewModel row, string action)
     {
@@ -128,7 +144,7 @@ public sealed class MainViewModel : ObservableViewModel
             catch (Exception readError) { logger.LogError(readError, "Library refresh after workflow failure failed"); }
             ReportError(error);
         }
-        finally { Busy(false); }
+        finally { await FinishAsync(); }
     }
     private void ShowDetails(DocumentListItemViewModel document)
     {
