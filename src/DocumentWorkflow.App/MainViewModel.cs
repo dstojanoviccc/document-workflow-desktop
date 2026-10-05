@@ -5,15 +5,21 @@ using Microsoft.Extensions.Logging;
 
 namespace DocumentWorkflow.App;
 
-public sealed class DocumentListItemViewModel(DocumentRecord document, Action<DocumentListItemViewModel> showDetails)
+public sealed class DocumentListItemViewModel
 {
+    private readonly DocumentRecord document;
+    public DocumentListItemViewModel(DocumentRecord document, Action<DocumentListItemViewModel> showDetails)
+    {
+        this.document = document;
+        ViewDetailsCommand = new RelayCommand(() => showDetails(this));
+    }
     public Guid Id => document.Id;
     public string LogicalName => document.LogicalName;
     public string FileName => document.FileName;
     public string Version => $"v{document.CurrentVersion}";
     public string Status => document.Status.ToString();
     public string Updated => document.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm");
-    public RelayCommand ViewDetailsCommand { get; } = new(() => showDetails(new DocumentListItemViewModel(document, showDetails)));
+    public RelayCommand ViewDetailsCommand { get; }
 }
 
 public sealed class MainViewModel : ObservableViewModel
@@ -70,3 +76,4 @@ public sealed class MainViewModel : ObservableViewModel
         Notify(nameof(Message));
     }
 }
+
