@@ -80,7 +80,7 @@ public class WorkflowViewModelTests
     {
         public bool Confirm { get; set; }
         public int Count { get; private set; }
-        public bool ConfirmDiscard(string name) { Count++; return Confirm; }
+        public bool ConfirmDiscard(string name, bool localEditsMayBeLost) { Count++; return Confirm; }
     }
     private sealed class StubWorkflow : IDocumentWorkflowService
     {
@@ -101,7 +101,7 @@ public class WorkflowViewModelTests
             return Task.CompletedTask;
         }
         public Task OpenAsync(Guid id, CancellationToken cancellationToken = default) { OpenCount++; return Task.CompletedTask; }
-        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default)
+        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default, bool allowModified = false)
         {
             DiscardCount++;
             copy = null;

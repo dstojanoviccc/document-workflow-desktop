@@ -53,7 +53,7 @@ public class ViewModelTests
     {
         public Task CheckOutAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task OpenAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default, bool allowModified = false) => Task.FromResult<string?>(null);
         public Task ReconcileAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public bool Fail { get; set; }
         public bool Empty { get; set; }
@@ -65,4 +65,4 @@ public class ViewModelTests
     }
 }
 
-file sealed class StubDialogs : IUserDialogService { public bool ConfirmDiscard(string fileName) => false; }
+file sealed class StubDialogs : IUserDialogService { public bool ConfirmDiscard(string fileName, bool localEditsMayBeLost) => false; }

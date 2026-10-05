@@ -23,6 +23,7 @@ public sealed class DocumentListItemViewModel
     public string Version => $"v{snapshot.Document.CurrentVersion}";
     public WorkingCopyState? WorkingState => snapshot.Evaluation?.State;
     public bool IsModified => WorkingState == WorkingCopyState.Modified;
+    public bool RequiresModifiedDiscardWarning => IsModified || snapshot.Evaluation is null || snapshot.Evaluation.Issue == EvaluationIssue.Unreadable;
     public string Status => !HasWorkingCopy ? snapshot.Document.Status.ToString()
         : snapshot.Evaluation?.Issue == EvaluationIssue.Missing ? "Local file missing"
         : HasWarning ? WorkingState is { } state ? $"{state} (unverified)" : "State unavailable"
@@ -117,16 +118,29 @@ public sealed class MainViewModel : ObservableViewModel
     private async Task RunActionAsync(DocumentListItemViewModel row, string action)
     {
         if (IsBusy) return;
-        if (action == "discard" && !dialogs.ConfirmDiscard(row.FileName)) return;
         Busy(true);
         SetMessage(action switch { "checkout" => "Checking out document…", "discard" => "Discarding local checkout…", _ => "Opening local copy…" });
         try
         {
+            var allowModified = false;
+            if (action == "discard")
+            {
+                await LoadAsync(); // Do not base a destructive warning on a stale row.
+                var currentRow = Documents.SingleOrDefault(x => x.Id == row.Id)
+                    ?? throw new WorkflowException("The document no longer exists. Refresh the library.");
+                allowModified = currentRow.RequiresModifiedDiscardWarning;
+                logger.LogInformation("Discard confirmation requested for {DocumentId}; warn about local edits: {WarnForEdits}", row.Id, allowModified);
+                if (!dialogs.ConfirmDiscard(currentRow.FileName, allowModified))
+                {
+                    SetMessage("Discard cancelled. The local working copy has been kept.");
+                    return;
+                }
+            }
             string? cleanupWarning = null;
             switch (action)
             {
                 case "checkout": await workflow.CheckOutAsync(row.Id); break;
-                case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id); break;
+                case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id, allowModified: allowModified); break;
                 case "open": await workflow.OpenAsync(row.Id); break;
             }
             await LoadAsync();

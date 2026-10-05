@@ -25,6 +25,10 @@ public sealed class AsyncCommand(Func<Task> execute, Action<Exception> onError) 
     public bool CanExecute(object? parameter) => !running;
     public async void Execute(object? parameter)
     {
+        await ExecuteAsync();
+    }
+    public async Task ExecuteAsync()
+    {
         if (running) return;
         running = true;
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);

@@ -40,7 +40,7 @@ public class ActivationTests
         Assert.Equal("Modified", Assert.Single(vm.Documents).Status);
         Assert.False(vm.IsBusy);
     }
-    private sealed class NoDialogs : IUserDialogService { public bool ConfirmDiscard(string name) => false; }
+    private sealed class NoDialogs : IUserDialogService { public bool ConfirmDiscard(string name, bool localEditsMayBeLost) => false; }
     private sealed class ActivationWorkflow : IDocumentWorkflowService
     {
         private readonly DocumentRecord document = new("Demo", "demo.txt");
@@ -64,7 +64,7 @@ public class ActivationTests
         }
         public Task CheckOutAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task OpenAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+        public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default, bool allowModified = false) => Task.FromResult<string?>(null);
         public Task ReconcileAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

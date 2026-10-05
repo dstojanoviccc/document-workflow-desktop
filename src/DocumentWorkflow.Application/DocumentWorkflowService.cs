@@ -76,13 +76,16 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             throw new WorkflowException("The local file could not be opened. Check its permissions and install or choose a default application for this file type in Windows.", error);
         }
     }
-    public async Task<string?> DiscardAsync(Guid documentId, CancellationToken cancellationToken = default)
+    public async Task<string?> DiscardAsync(Guid documentId, CancellationToken cancellationToken = default, bool allowModified = false)
     {
         logger.LogInformation("Discard started for {DocumentId}", documentId);
         try
         {
             await using var session = await store.BeginAsync(documentId, cancellationToken);
             var copy = session.WorkingCopy ?? throw new WorkflowException("This document has no active checkout to discard.");
+            var evaluation = await states.EvaluateAsync(session.Document, copy, cancellationToken);
+            if (!allowModified && (evaluation.State == WorkingCopyState.Modified || evaluation.Issue == EvaluationIssue.Unreadable))
+                throw new WorkflowException("The local copy contains edits or could not be verified. Review the modified-file warning and explicitly confirm discard before continuing.");
             using var deletion = workspace.StageDeletion(documentId, session.Document.FileName, copy.LocalPath);
             session.RemoveWorkingCopy();
             session.Document.DiscardCheckout();
