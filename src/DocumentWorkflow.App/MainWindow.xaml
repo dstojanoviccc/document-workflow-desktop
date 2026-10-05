@@ -1,12 +1,30 @@
-﻿<Window x:Class="DocumentWorkflow.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:DocumentWorkflow.App"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
-
-    </Grid>
+<Window x:Class="DocumentWorkflow.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Document Workflow Desktop" Width="1120" Height="720" MinWidth="880" MinHeight="520" Background="#F4F6F8" FontFamily="Segoe UI" Foreground="#202D3D" WindowStartupLocation="CenterScreen">
+ <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
+ <Grid Margin="32">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="24"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid>
+   <StackPanel><TextBlock Text="DOCUMENT WORKSPACE" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/><TextBlock Text="Document Workflow" FontSize="28" FontWeight="SemiBold" Margin="0,6,0,6"/><TextBlock Text="Browse your document library and review current version metadata." Foreground="#64748B"/></StackPanel>
+   <Button Content="Refresh" Command="{Binding RefreshCommand}" HorizontalAlignment="Right" VerticalAlignment="Center" AutomationProperties.AutomationId="RefreshButton"/>
+  </Grid>
+  <Border Grid.Row="2" Background="White" BorderBrush="#DEE4EB" BorderThickness="1" CornerRadius="6" Padding="20">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,20"><TextBlock Text="Document library" FontSize="17" FontWeight="SemiBold"/><TextBlock Text="{Binding CountText}" Foreground="#64748B" HorizontalAlignment="Right"/></DockPanel>
+    <DataGrid Grid.Row="1" ItemsSource="{Binding Documents}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EDF0F4" BorderThickness="0" RowHeight="64" Background="White" SelectionMode="Single" AutomationProperties.AutomationId="DocumentList">
+     <DataGrid.Resources><Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#F4F6F8"/><Setter Property="Padding" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/></Style><Style TargetType="DataGridCell"><Setter Property="Padding" Value="12,0"/><Setter Property="BorderThickness" Value="0"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style></DataGrid.Resources>
+     <DataGrid.Columns>
+      <DataGridTemplateColumn Header="Document" Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding LogicalName}" FontWeight="SemiBold"/><TextBlock Text="{Binding FileName}" Foreground="#64748B" FontSize="12" Margin="0,4,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="75"/>
+      <DataGridTemplateColumn Header="Status" Width="115"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border Background="#EAF4EF" CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock Text="{Binding Status}" Foreground="#256447" FontSize="12"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTextColumn Header="Updated" Binding="{Binding Updated}" Width="155"/>
+      <DataGridTemplateColumn Header="Action" Width="125"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="View Details" Command="{Binding ViewDetailsCommand}" VerticalAlignment="Center" Padding="10,6"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+     </DataGrid.Columns>
+    </DataGrid>
+    <Border Grid.Row="2" Visibility="{Binding DetailsVisible, Converter={StaticResource BoolVisibility}}" Background="#F4F6F8" Padding="16" Margin="0,16,0,0">
+     <DockPanel><Button DockPanel.Dock="Right" Content="Close" Command="{Binding CloseDetailsCommand}" VerticalAlignment="Top"/><StackPanel><TextBlock Text="{Binding SelectedDocument.FileName}" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedDocument.Id, StringFormat='Document ID: {0}'}" Margin="0,6,0,0"/><TextBlock Text="{Binding SelectedDocument.Version, StringFormat='Current version: {0}'}"/><TextBlock Text="Demo metadata only. Content files and checkout will be added in a later phase." Foreground="#64748B" Margin="0,6,0,0" TextWrapping="Wrap"/></StackPanel></DockPanel>
+    </Border>
+   </Grid>
+  </Border>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 1 • library foundation • checkout and check-in planned" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+ </Grid>
 </Window>
