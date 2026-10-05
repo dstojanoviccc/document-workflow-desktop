@@ -65,7 +65,7 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             var copy = session.WorkingCopy ?? throw new WorkflowException("Check out this document before opening a local file.");
             var evaluation = await states.EvaluateAsync(session.Document, copy, cancellationToken);
             if (evaluation.Issue != EvaluationIssue.None)
-                throw new WorkflowException("The local file is missing. Discard the checkout to return to Available; no file is recreated automatically.");
+                throw new WorkflowException(evaluation.Warning ?? "The local file could not be evaluated. Refresh and try again.");
             opener.Open(copy.LocalPath);
             logger.LogInformation("Opened working copy for {DocumentId}", documentId);
         }
