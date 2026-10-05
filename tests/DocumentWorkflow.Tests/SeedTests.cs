@@ -12,7 +12,7 @@ public class SeedTests
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={path};Pooling=False").Options;
         try
         {
-            var initializer = new DatabaseInitializer(new TestFactory(options));
+            var initializer = new DatabaseInitializer(new TestFactory(options), new DemoDocumentSource(Path.Combine(AppContext.BaseDirectory, "demo-data")), new FileHashService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance);
             await initializer.InitializeAsync();
             await initializer.InitializeAsync();
             await using var db = new AppDbContext(options);
@@ -30,3 +30,4 @@ public class SeedTests
         public AppDbContext CreateDbContext() => new(options);
     }
 }
+

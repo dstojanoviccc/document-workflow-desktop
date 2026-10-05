@@ -7,28 +7,46 @@ namespace DocumentWorkflow.App;
 
 public sealed class DocumentListItemViewModel
 {
-    private readonly DocumentRecord document;
-    public DocumentListItemViewModel(DocumentRecord document, Action<DocumentListItemViewModel> showDetails)
+    private readonly DocumentSnapshot snapshot;
+    public DocumentListItemViewModel(DocumentSnapshot snapshot, Action<DocumentListItemViewModel> showDetails,
+        Func<DocumentListItemViewModel, string, Task> run, Action<Exception> onError)
     {
-        this.document = document;
+        this.snapshot = snapshot;
         ViewDetailsCommand = new RelayCommand(() => showDetails(this));
+        CheckOutCommand = new AsyncCommand(() => run(this, "checkout"), onError);
+        OpenCommand = new AsyncCommand(() => run(this, "open"), onError);
+        DiscardCommand = new AsyncCommand(() => run(this, "discard"), onError);
     }
-    public Guid Id => document.Id;
-    public string LogicalName => document.LogicalName;
-    public string FileName => document.FileName;
-    public string Version => $"v{document.CurrentVersion}";
-    public string Status => document.Status.ToString();
-    public string Updated => document.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm");
+    public Guid Id => snapshot.Document.Id;
+    public string LogicalName => snapshot.Document.LogicalName;
+    public string FileName => snapshot.Document.FileName;
+    public string Version => $"v{snapshot.Document.CurrentVersion}";
+    public string Status => snapshot.WorkspaceWarning is not null ? "Local copy unavailable" : HasWorkingCopy ? "Checked out" : snapshot.Document.Status.ToString();
+    public bool HasWorkingCopy => snapshot.WorkingCopy is not null;
+    public bool CanCheckOut => !HasWorkingCopy && snapshot.Document.Status == WorkingCopyState.Available;
+    public bool CanOpen => HasWorkingCopy && snapshot.WorkspaceWarning is null;
+    public bool HasWarning => snapshot.WorkspaceWarning is not null;
+    public string Warning => snapshot.WorkspaceWarning ?? "";
+    public string Updated => snapshot.Document.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm");
+    public string LocalPath => snapshot.WorkingCopy?.LocalPath ?? "";
+    public string CheckedOutAt => snapshot.WorkingCopy?.CheckedOutAt.ToLocalTime().ToString("dd MMM yyyy HH:mm") ?? "";
+    public string BaseVersion => snapshot.WorkingCopy is { } copy ? $"v{copy.BaseVersion}" : "";
+    public string BaseHash => snapshot.WorkingCopy is { } copy ? copy.LastKnownHash[..Math.Min(16, copy.LastKnownHash.Length)] + "…" : "";
     public RelayCommand ViewDetailsCommand { get; }
+    public AsyncCommand CheckOutCommand { get; }
+    public AsyncCommand OpenCommand { get; }
+    public AsyncCommand DiscardCommand { get; }
 }
 
 public sealed class MainViewModel : ObservableViewModel
 {
-    private readonly IDocumentRepository repository;
+    private readonly IDocumentWorkflowService workflow;
+    private readonly IUserDialogService dialogs;
     private readonly ILogger<MainViewModel> logger;
-    public MainViewModel(IDocumentRepository repository, ILogger<MainViewModel> logger)
+    public MainViewModel(IDocumentWorkflowService workflow, IUserDialogService dialogs, ILogger<MainViewModel> logger)
     {
-        this.repository = repository;
+        this.workflow = workflow;
+        this.dialogs = dialogs;
         this.logger = logger;
         RefreshCommand = new AsyncCommand(RefreshAsync, ReportError);
         CloseDetailsCommand = new RelayCommand(() => { DetailsVisible = false; Notify(nameof(DetailsVisible)); });
@@ -41,26 +59,68 @@ public sealed class MainViewModel : ObservableViewModel
     public string CountText => $"{Documents.Count} documents";
     public bool DetailsVisible { get; private set; }
     public DocumentListItemViewModel? SelectedDocument { get; private set; }
+    private void Busy(bool value) { IsBusy = value; Notify(nameof(IsBusy)); }
+    private void SetMessage(string text) { Message = text; Notify(nameof(Message)); }
+    private async Task LoadAsync()
+    {
+        var documents = await workflow.ListAsync();
+        var selectedId = SelectedDocument?.Id;
+        Documents.Clear();
+        foreach (var document in documents) Documents.Add(new(document, ShowDetails, RunActionAsync, ReportError));
+        SelectedDocument = Documents.FirstOrDefault(x => x.Id == selectedId);
+        DetailsVisible = DetailsVisible && SelectedDocument is not null;
+        Notify(nameof(SelectedDocument));
+        Notify(nameof(DetailsVisible));
+        Notify(nameof(CountText));
+        logger.LogInformation("Loaded {DocumentCount} documents with {WorkingCopyCount} active working copies", documents.Count, documents.Count(x => x.WorkingCopy is not null));
+    }
     public async Task RefreshAsync()
     {
         if (IsBusy) return;
-        IsBusy = true;
-        Notify(nameof(IsBusy));
-        Message = "Loading documents…";
-        Notify(nameof(Message));
+        Busy(true);
+        SetMessage("Loading documents…");
         try
         {
-            var documents = await repository.ListAsync();
-            Documents.Clear();
-            foreach (var document in documents) Documents.Add(new(document, ShowDetails));
-            DetailsVisible = false;
-            Notify(nameof(DetailsVisible));
-            Notify(nameof(CountText));
-            Message = documents.Count == 0 ? "No documents found." : $"Loaded from SQLite • refreshed {DateTime.Now:HH:mm:ss}";
-            logger.LogInformation("Loaded {DocumentCount} documents", documents.Count);
+            await LoadAsync();
+            var warnings = Documents.Count(x => x.HasWarning);
+            SetMessage(Documents.Count == 0 ? "No documents found." : warnings > 0
+                ? $"{warnings} local working copy needs attention. View Details for guidance."
+                : $"Loaded from SQLite • refreshed {DateTime.Now:HH:mm:ss}");
         }
         catch (Exception error) { ReportError(error); }
-        finally { IsBusy = false; Notify(nameof(IsBusy)); Notify(nameof(Message)); }
+        finally { Busy(false); }
+    }
+    private async Task RunActionAsync(DocumentListItemViewModel row, string action)
+    {
+        if (IsBusy) return;
+        if (action == "discard" && !dialogs.ConfirmDiscard(row.FileName)) return;
+        Busy(true);
+        SetMessage(action switch { "checkout" => "Checking out document…", "discard" => "Discarding local checkout…", _ => "Opening local copy…" });
+        try
+        {
+            string? cleanupWarning = null;
+            switch (action)
+            {
+                case "checkout": await workflow.CheckOutAsync(row.Id); break;
+                case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id); break;
+                case "open": await workflow.OpenAsync(row.Id); break;
+            }
+            await LoadAsync();
+            SetMessage(cleanupWarning ?? action switch
+            {
+                "checkout" => $"{row.FileName} checked out. Open the local copy to edit it.",
+                "discard" => $"Checkout discarded for {row.FileName}. The source file is unchanged.",
+                _ => $"Opened {row.FileName} in its default Windows application."
+            });
+        }
+        catch (Exception error)
+        {
+            // Refresh filesystem presence after a failed Open/discard without hiding the operation error.
+            try { await LoadAsync(); }
+            catch (Exception readError) { logger.LogError(readError, "Library refresh after workflow failure failed"); }
+            ReportError(error);
+        }
+        finally { Busy(false); }
     }
     private void ShowDetails(DocumentListItemViewModel document)
     {
@@ -71,9 +131,7 @@ public sealed class MainViewModel : ObservableViewModel
     }
     private void ReportError(Exception error)
     {
-        logger.LogError(error, "Could not load documents");
-        Message = "Could not load documents. Check the application log and try Refresh again.";
-        Notify(nameof(Message));
+        logger.LogError(error, "Document library operation failed");
+        SetMessage(error is WorkflowException ? error.Message : "Could not load documents. Check the application log and try Refresh again.");
     }
 }
-
