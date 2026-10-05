@@ -15,5 +15,6 @@ public interface IWorkflowSession : IAsyncDisposable
     void RemoveWorkingCopy();
     Task CommitAsync(CancellationToken cancellationToken = default);
 }
-public sealed record DocumentSnapshot(DocumentRecord Document, WorkingCopy? WorkingCopy, string? WorkspaceWarning = null);
+public sealed record DocumentSnapshot(DocumentRecord Document, WorkingCopy? WorkingCopy, string? WorkspaceWarning = null,
+    WorkingCopyEvaluation? Evaluation = null);
 public sealed class WorkflowException(string message, Exception? inner = null) : Exception(message, inner);

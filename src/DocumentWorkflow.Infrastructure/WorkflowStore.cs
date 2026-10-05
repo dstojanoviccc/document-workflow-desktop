@@ -14,7 +14,7 @@ public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWo
                       join copy in db.WorkingCopies.AsNoTracking() on document.Id equals copy.DocumentId into copies
                       from copy in copies.DefaultIfEmpty()
                       orderby document.LogicalName
-                      select new DocumentSnapshot(document, copy, null)).ToListAsync(cancellationToken);
+                      select new DocumentSnapshot(document, copy, null, null)).ToListAsync(cancellationToken);
     }
     public async Task<IWorkflowSession> BeginAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
