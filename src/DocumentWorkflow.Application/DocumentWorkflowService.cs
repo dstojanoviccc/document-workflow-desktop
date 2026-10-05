@@ -4,25 +4,20 @@ using Microsoft.Extensions.Logging;
 namespace DocumentWorkflow.Application;
 
 public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSource source, IWorkspaceService workspace,
-    IFileHashService hashes, ILogger<DocumentWorkflowService> logger, IWorkingCopyOpener opener) : IDocumentWorkflowService
+    IFileHashService hashes, ILogger<DocumentWorkflowService> logger, IWorkingCopyOpener opener, WorkingCopyStateService? evaluator = null) : IDocumentWorkflowService
 {
+    private readonly WorkingCopyStateService states = evaluator ?? new(workspace, hashes, logger);
     public async Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var documents = await store.ListAsync(cancellationToken);
-        return documents.Select(item =>
+        var documents = await store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var evaluated = new List<DocumentSnapshot>(documents.Count);
+        foreach (var item in documents)
         {
-            if (item.WorkingCopy is null) return item;
-            try
-            {
-                return workspace.Exists(item.Document.Id, item.Document.FileName, item.WorkingCopy.LocalPath)
-                    ? item : item with { WorkspaceWarning = "The local file is missing. Open is unavailable. Discard clears this checkout; the source file is unchanged." };
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
-            {
-                logger.LogWarning(error, "Working copy path could not be reconciled for {DocumentId}", item.Document.Id);
-                return item with { WorkspaceWarning = "The local workspace cannot be accessed safely. Restore its path or permissions before opening or discarding this checkout." };
-            }
-        }).ToList();
+            if (item.WorkingCopy is null) { evaluated.Add(item); continue; }
+            var result = await states.EvaluateAsync(item.Document, item.WorkingCopy, cancellationToken).ConfigureAwait(false);
+            evaluated.Add(item with { Evaluation = result, WorkspaceWarning = result.Warning });
+        }
+        return evaluated;
     }
     public async Task ReconcileAsync(CancellationToken cancellationToken = default)
     {
@@ -68,7 +63,8 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
         {
             await using var session = await store.BeginAsync(documentId, cancellationToken);
             var copy = session.WorkingCopy ?? throw new WorkflowException("Check out this document before opening a local file.");
-            if (!workspace.Exists(documentId, session.Document.FileName, copy.LocalPath))
+            var evaluation = await states.EvaluateAsync(session.Document, copy, cancellationToken);
+            if (evaluation.Issue != EvaluationIssue.None)
                 throw new WorkflowException("The local file is missing. Discard the checkout to return to Available; no file is recreated automatically.");
             opener.Open(copy.LocalPath);
             logger.LogInformation("Opened working copy for {DocumentId}", documentId);
@@ -97,6 +93,7 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
                 logger.LogError(cleanupError, "Discard committed but staged file cleanup failed for {DocumentId}", documentId);
                 return "Checkout discarded, but its staged .discard file could not be deleted. Close the external editor and remove that leftover file from the document workspace directory.";
             }
+            states.Forget(documentId);
             logger.LogInformation("Discard completed for {DocumentId}", documentId);
             return null;
         }

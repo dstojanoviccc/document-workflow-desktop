@@ -40,6 +40,7 @@ public partial class App : System.Windows.Application
             builder.Services.AddSingleton<IFileHashService, FileHashService>();
             builder.Services.AddSingleton<IWorkflowStore, WorkflowStore>();
             builder.Services.AddSingleton<IWorkingCopyOpener, ShellWorkingCopyOpener>();
+            builder.Services.AddSingleton(provider => new WorkingCopyStateService(provider.GetRequiredService<IWorkspaceService>(), provider.GetRequiredService<IFileHashService>(), provider.GetRequiredService<ILogger<WorkingCopyStateService>>()));
             builder.Services.AddSingleton<IDocumentWorkflowService, DocumentWorkflowService>();
             builder.Services.AddSingleton<IUserDialogService, UserDialogService>();
             builder.Services.AddSingleton<DatabaseInitializer>();
@@ -76,4 +77,3 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 }
-
