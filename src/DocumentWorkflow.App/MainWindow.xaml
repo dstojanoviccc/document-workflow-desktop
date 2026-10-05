@@ -16,7 +16,7 @@
      <DataGrid.Columns>
       <DataGridTemplateColumn Header="Document" Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding LogicalName}" FontWeight="SemiBold"/><TextBlock Text="{Binding FileName}" Foreground="#64748B" FontSize="12" Margin="0,4,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
       <DataGridTextColumn ElementStyle="{StaticResource CenteredCellText}" Header="Version" Binding="{Binding Version}" Width="75"/>
-      <DataGridTemplateColumn Header="Working State" Width="155"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" VerticalAlignment="Center"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#EAF4EF"/><Style.Triggers><DataTrigger Binding="{Binding HasWorkingCopy}" Value="True"><Setter Property="Background" Value="#E8F0FA"/></DataTrigger><DataTrigger Binding="{Binding HasWarning}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding Status}" Foreground="#24354A" FontSize="11"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTemplateColumn Header="Working State" Width="155"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" VerticalAlignment="Center"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#F0F2F5"/><Style.Triggers><DataTrigger Binding="{Binding HasWorkingCopy}" Value="True"><Setter Property="Background" Value="#E8F0FA"/></DataTrigger><DataTrigger Binding="{Binding IsModified}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger><DataTrigger Binding="{Binding HasWarning}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding Status}" Foreground="#24354A" FontSize="11"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
       <DataGridTextColumn ElementStyle="{StaticResource CenteredCellText}" Header="Updated" Binding="{Binding Updated}" Width="155"/>
       <DataGridTemplateColumn Header="Actions" Width="290"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Center">
        <Button Content="Check Out" Command="{Binding CheckOutCommand}" Visibility="{Binding CanCheckOut, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
@@ -33,13 +33,15 @@
       <StackPanel Visibility="{Binding SelectedDocument.HasWorkingCopy, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0">
        <TextBlock Text="{Binding SelectedDocument.CheckedOutAt, StringFormat='Checked out: {0}'}"/>
        <TextBlock Text="{Binding SelectedDocument.BaseVersion, StringFormat='Base version: {0}'}"/>
-       <TextBlock Text="{Binding SelectedDocument.BaseHash, StringFormat='Base hash: {0}'}"/>
+       <TextBlock Text="{Binding SelectedDocument.BaseHash, StringFormat='Baseline hash: {0}'}"/>
+       <TextBlock Text="{Binding SelectedDocument.CurrentHash, StringFormat='Current hash: {0}'}"/>
+       <TextBlock Text="{Binding SelectedDocument.ContentsComparison}" TextWrapping="Wrap"/>
        <TextBlock Text="{Binding SelectedDocument.LocalPath, StringFormat='Local copy: {0}'}" TextWrapping="Wrap"/>
       </StackPanel>
       <TextBlock Text="{Binding SelectedDocument.Warning}" Visibility="{Binding SelectedDocument.HasWarning, Converter={StaticResource BoolVisibility}}" Foreground="#8B5914" Margin="0,6,0,0" TextWrapping="Wrap"/></StackPanel></DockPanel>
     </Border>
    </Grid>
   </Border>
-  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 2 • local checkout and discard • change detection and check-in planned" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 3 • local change detection • check-in planned" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
  </Grid>
 </Window>

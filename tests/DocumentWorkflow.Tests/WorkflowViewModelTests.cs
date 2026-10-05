@@ -21,7 +21,7 @@ public class WorkflowViewModelTests
         Assert.True(checkedOut.HasWorkingCopy);
         Assert.True(checkedOut.CanOpen);
         Assert.False(checkedOut.CanCheckOut);
-        Assert.Equal("Checked out", checkedOut.Status);
+        Assert.Equal("Unchanged", checkedOut.Status);
         checkedOut.ViewDetailsCommand.Execute(null);
         checkedOut.OpenCommand.Execute(null);
         Assert.Equal(1, service.OpenCount);
@@ -91,7 +91,8 @@ public class WorkflowViewModelTests
         public int OpenCount { get; private set; }
         public int DiscardCount { get; private set; }
         public Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<DocumentSnapshot>>([new(Document, copy, Warning)]);
+            Task.FromResult<IReadOnlyList<DocumentSnapshot>>([new(Document, copy, Warning,
+                copy is null ? null : new WorkingCopyEvaluation(WorkingCopyState.Unchanged, copy.LastKnownHash))]);
         public Task CheckOutAsync(Guid id, CancellationToken cancellationToken = default)
         {
             if (Fail) throw new WorkflowException("The demo source file is missing.");

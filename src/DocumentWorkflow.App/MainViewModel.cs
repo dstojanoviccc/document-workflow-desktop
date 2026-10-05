@@ -21,7 +21,15 @@ public sealed class DocumentListItemViewModel
     public string LogicalName => snapshot.Document.LogicalName;
     public string FileName => snapshot.Document.FileName;
     public string Version => $"v{snapshot.Document.CurrentVersion}";
-    public string Status => snapshot.WorkspaceWarning is not null ? "Local copy unavailable" : HasWorkingCopy ? "Checked out" : snapshot.Document.Status.ToString();
+    public WorkingCopyState? WorkingState => snapshot.Evaluation?.State;
+    public bool IsModified => WorkingState == WorkingCopyState.Modified;
+    public string Status => !HasWorkingCopy ? snapshot.Document.Status.ToString()
+        : snapshot.Evaluation?.Issue == EvaluationIssue.Missing ? "Local file missing"
+        : HasWarning ? WorkingState is { } state ? $"{state} (unverified)" : "State unavailable"
+        : WorkingState?.ToString() ?? "State not evaluated";
+    public string CurrentHash => snapshot.Evaluation?.CurrentHash is { } hash ? hash[..Math.Min(16, hash.Length)] + "…" : "Not available";
+    public string ContentsComparison => snapshot.Evaluation?.Issue != EvaluationIssue.None ? "Local contents could not be checked."
+        : IsModified ? "Local contents differ from the checked-out version." : "Local contents match the checked-out version.";
     public bool HasWorkingCopy => snapshot.WorkingCopy is not null;
     public bool CanCheckOut => !HasWorkingCopy && snapshot.Document.Status == WorkingCopyState.Available;
     public bool CanOpen => HasWorkingCopy && snapshot.WorkspaceWarning is null;
