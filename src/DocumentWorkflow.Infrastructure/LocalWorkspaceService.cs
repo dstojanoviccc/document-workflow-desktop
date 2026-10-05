@@ -8,6 +8,8 @@ public sealed class LocalWorkspaceService : IWorkspaceService
     public LocalWorkspaceService(string root, string sourceRoot)
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (Root.Equals(Path.GetPathRoot(Root), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Use a dedicated directory for the workspace, not a drive root.");
         var source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceRoot));
         if (Inside(Root, source) || Inside(source, Root))
             throw new ArgumentException("The workspace and demo repository must be separate directories.");
@@ -68,6 +70,7 @@ public sealed class LocalWorkspaceService : IWorkspaceService
     public IStagedDeletion StageDeletion(Guid documentId, string fileName, string storedPath)
     {
         var path = Validate(documentId, fileName, storedPath);
+        if (Directory.Exists(path)) throw new IOException("The expected local file is a directory. Discard has been stopped to protect its contents.");
         var staged = path + ".discard";
         SafePaths.RejectLinks(staged);
         if (File.Exists(staged)) throw new IOException("A previous discard could not finish cleanup. Remove its leftover .discard file before trying again.");

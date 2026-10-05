@@ -128,6 +128,74 @@ public sealed class WorkflowTests : IDisposable
         Assert.True(File.Exists(path));
         Assert.NotNull(Assert.Single(await Service().ListAsync()).WorkingCopy);
     }
+    [Fact]
+    public async Task Unknown_document_is_rejected_before_copying()
+    {
+        await InitializeAsync();
+        await Assert.ThrowsAsync<WorkflowException>(() => Service().CheckOutAsync(Guid.NewGuid()));
+        Assert.False(Directory.Exists(Workspace.Root));
+    }
+    [Fact]
+    public async Task Untracked_existing_file_is_preserved_and_checkout_is_rejected()
+    {
+        await InitializeAsync();
+        var path = Workspace.Resolve(document.Id, document.FileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, "untracked local content");
+        await Assert.ThrowsAsync<WorkflowException>(() => Service().CheckOutAsync(document.Id));
+        Assert.Equal("untracked local content", await File.ReadAllTextAsync(path));
+        Assert.Null(Assert.Single(await Service().ListAsync()).WorkingCopy);
+    }
+    [Fact]
+    public async Task Uncreatable_workspace_fails_without_metadata_changes()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Workspace.Root, "blocking file");
+        await Assert.ThrowsAsync<WorkflowException>(() => Service().CheckOutAsync(document.Id));
+        var snapshot = Assert.Single(await Service().ListAsync());
+        Assert.Null(snapshot.WorkingCopy);
+        Assert.Equal(WorkingCopyState.Available, snapshot.Document.Status);
+    }
+    [Fact]
+    public async Task Competing_service_instances_create_only_one_checkout()
+    {
+        await InitializeAsync();
+        async Task<bool> TryCheckout()
+        {
+            try { await Service().CheckOutAsync(document.Id); return true; }
+            catch (WorkflowException) { return false; }
+        }
+        var results = await Task.WhenAll(Task.Run(TryCheckout), Task.Run(TryCheckout));
+        Assert.Single(results, x => x);
+        Assert.Single(results, x => !x);
+        Assert.NotNull(Assert.Single(await Service().ListAsync()).WorkingCopy);
+        await using var db = new AppDbContext(Options);
+        Assert.Equal(1, await db.WorkingCopies.CountAsync());
+    }
+    [Fact]
+    public async Task Unassociated_file_error_is_friendly_and_checkout_is_retained()
+    {
+        await InitializeAsync();
+        await Service().CheckOutAsync(document.Id);
+        opener.Fail = true;
+        var error = await Assert.ThrowsAsync<WorkflowException>(() => Service().OpenAsync(document.Id));
+        Assert.Contains("default application", error.Message);
+        Assert.NotNull(Assert.Single(await Service().ListAsync()).WorkingCopy);
+    }
+    [Fact]
+    public async Task Changed_workspace_configuration_warns_and_refuses_deletion()
+    {
+        await InitializeAsync();
+        await Service().CheckOutAsync(document.Id);
+        var changed = new DocumentWorkflowService(new WorkflowStore(new Factory(Options)),
+            new DemoDocumentSource(Path.Combine(root, "source")),
+            new LocalWorkspaceService(Path.Combine(root, "other-workspace"), Path.Combine(root, "source")),
+            new FileHashService(), NullLogger<DocumentWorkflowService>.Instance, opener);
+        Assert.NotNull(Assert.Single(await changed.ListAsync()).WorkspaceWarning);
+        await Assert.ThrowsAsync<WorkflowException>(() => changed.DiscardAsync(document.Id));
+        Assert.True(File.Exists(Workspace.Resolve(document.Id, document.FileName)));
+        Assert.NotNull(Assert.Single(await Service().ListAsync()).WorkingCopy);
+    }
     private sealed class Factory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext() => new(options);
@@ -135,7 +203,8 @@ public sealed class WorkflowTests : IDisposable
     private sealed class RecordingOpener : IWorkingCopyOpener
     {
         public string? Path { get; private set; }
-        public void Open(string path) => Path = path;
+        public bool Fail { get; set; }
+        public void Open(string path) { if (Fail) throw new System.ComponentModel.Win32Exception(1155); Path = path; }
     }
     private sealed class CommitFailingStore(IWorkflowStore inner) : IWorkflowStore
     {

@@ -25,9 +25,33 @@ public class SeedTests
         }
         finally { File.Delete(path); }
     }
+    [Fact]
+    public async Task Phase_one_placeholder_is_upgraded_without_changing_identity_or_versions()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var document = new DocumentWorkflow.Domain.DocumentRecord("Product Catalog", "Product-Catalog.xlsx");
+        await using (var db = new AppDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            db.Documents.Add(document);
+            db.Versions.Add(new DocumentWorkflow.Domain.DocumentVersion(document.Id, 1, "metadata-placeholder", "Demo metadata — initial version; no content file supplied."));
+            await db.SaveChangesAsync();
+        }
+        var source = new DemoDocumentSource(Path.Combine(AppContext.BaseDirectory, "demo-data"));
+        var hashes = new FileHashService();
+        await new DatabaseInitializer(new TestFactory(options), source, hashes,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
+        await using var read = new AppDbContext(options);
+        Assert.Equal(document.Id, (await read.Documents.SingleAsync()).Id);
+        var version = await read.Versions.SingleAsync();
+        Assert.Equal(1, version.VersionNumber);
+        Assert.Equal(await hashes.HashAsync(source.Resolve(document.FileName)), version.FileHash);
+        Assert.Equal("Initial generic demo file.", version.ChangeNote);
+    }
     private sealed class TestFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext() => new(options);
     }
 }
-

@@ -35,6 +35,7 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
         logger.LogInformation("Checkout started for {DocumentId}", documentId);
         string? createdPath = null;
         DocumentRecord? document = null;
+        var committed = false;
         try
         {
             await using var session = await store.BeginAsync(documentId, cancellationToken);
@@ -46,12 +47,13 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             session.Add(new WorkingCopy(document.Id, createdPath, document.CurrentVersion, hash));
             document.CheckOut();
             await session.CommitAsync(cancellationToken);
+            committed = true;
             logger.LogInformation("Checkout completed for {DocumentId} at base version {BaseVersion}", document.Id, document.CurrentVersion);
         }
         catch (Exception error)
         {
             logger.LogError(error, "Checkout failed for {DocumentId}", documentId);
-            if (createdPath is not null)
+            if (createdPath is not null && !committed)
             {
                 try { workspace.Delete(documentId, document!.FileName, createdPath); }
                 catch (Exception cleanupError) { logger.LogError(cleanupError, "Checkout file cleanup failed for {DocumentId}", documentId); }
