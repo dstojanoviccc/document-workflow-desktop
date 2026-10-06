@@ -19,7 +19,7 @@ public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWo
             ?? throw new WorkflowException("The document no longer exists. Refresh the library.");
         var versions = await db.Versions.AsNoTracking().Where(x => x.DocumentId == documentId)
             .OrderByDescending(x => x.VersionNumber).ToListAsync(cancellationToken);
-        // SQLite cannot ORDER BY DateTimeOffset; these UTC DateTime columns have stable text ordering.
+        // The same transaction keeps the current pointer, checkout, versions and timeline consistent.
         var events = await db.WorkflowEvents.AsNoTracking().Where(x => x.DocumentId == documentId)
             .OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id).ToListAsync(cancellationToken);
         return new(context, versions, events);
@@ -57,6 +57,7 @@ public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWo
         public async Task<bool> AppendEventAsync(WorkflowEvent value, CancellationToken cancellationToken = default)
         {
             if (value.DocumentId != document.Id) throw new InvalidOperationException("Audit event must belong to this document.");
+            if (db.WorkflowEvents.Local.Any(x => x.DocumentId == document.Id && x.DeduplicationKey == value.DeduplicationKey)) return false;
             if (await db.WorkflowEvents.AnyAsync(x => x.DocumentId == document.Id && x.DeduplicationKey == value.DeduplicationKey, cancellationToken)) return false;
             db.WorkflowEvents.Add(value);
             return true;

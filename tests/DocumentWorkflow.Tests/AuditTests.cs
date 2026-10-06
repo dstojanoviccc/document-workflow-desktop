@@ -14,6 +14,21 @@ public sealed class AuditTests : IDisposable
 {
     private readonly ConflictEnvironment env = new();
     [Fact]
+    public async Task Duplicate_append_is_ignored_within_one_transaction_and_after_restart()
+    {
+        await env.InitializeAsync();
+        var store = new WorkflowStore(new Factory(env.Options));
+        await using (var session = await store.BeginAsync(env.Document.Id))
+        {
+            Assert.True(await session.AppendEventAsync(new(env.Document.Id, WorkflowEventType.RecoveryPerformed, "one-real-action")));
+            Assert.False(await session.AppendEventAsync(new(env.Document.Id, WorkflowEventType.RecoveryPerformed, "one-real-action")));
+            await session.CommitAsync();
+        }
+        await using (var session = await store.BeginAsync(env.Document.Id))
+            Assert.False(await session.AppendEventAsync(new(env.Document.Id, WorkflowEventType.RecoveryPerformed, "one-real-action")));
+        Assert.Single((await env.Service().GetHistoryAsync(env.Document.Id)).Events, x => x.Type == WorkflowEventType.RecoveryPerformed);
+    }
+    [Fact]
     public async Task Failed_metadata_commit_rolls_back_checkin_event_with_the_version()
     {
         await env.InitializeAsync();
