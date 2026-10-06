@@ -160,6 +160,7 @@ public sealed class RecoveryTests : IDisposable
             public IReadOnlyList<DocumentVersion> Versions => inner.Versions;
             public void Add(WorkingCopy copy) => inner.Add(copy);
             public void AddVersion(DocumentVersion version) => inner.AddVersion(version);
+            public Task<bool> AppendEventAsync(WorkflowEvent value, CancellationToken cancellationToken = default) => inner.AppendEventAsync(value, cancellationToken);
             public void RemoveWorkingCopy() => inner.RemoveWorkingCopy();
             public async Task CommitAsync(CancellationToken cancellationToken = default)
             { await inner.CommitAsync(cancellationToken); throw new IOException("Committed, but completion response interrupted"); }

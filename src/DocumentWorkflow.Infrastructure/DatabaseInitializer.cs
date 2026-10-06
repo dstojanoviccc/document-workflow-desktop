@@ -21,6 +21,8 @@ public sealed class DatabaseInitializer(IDbContextFactory<AppDbContext> factory,
                 var document = new DocumentRecord(Path.GetFileNameWithoutExtension(name).Replace('-', ' '), name);
                 db.Documents.Add(document);
                 db.Versions.Add(new DocumentVersion(document.Id, 1, "pending-demo-content", "Demo metadata — awaiting source file."));
+                db.WorkflowEvents.Add(new WorkflowEvent(document.Id, WorkflowEventType.DocumentCreated, "created", 1,
+                    occurredAt: document.UpdatedAt));
             }
             await db.SaveChangesAsync(cancellationToken);
         }

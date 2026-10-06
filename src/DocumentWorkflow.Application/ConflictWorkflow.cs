@@ -56,6 +56,8 @@ public sealed partial class DocumentWorkflowService
                 created = true;
                 var version = new DocumentVersion(documentId, next, actual, "Competing local writer.", document.CurrentVersion);
                 session.AddVersion(version);
+                await session.AppendEventAsync(new(documentId, WorkflowEventType.CompetingVersionPublished, "competing:" + version.Id,
+                    next, version.BaseVersion, occurredAt: version.CreatedAt), cancellationToken);
                 document.PublishCompetingVersion(document.CurrentVersion, next, version.CreatedAt);
                 await session.CommitAsync(cancellationToken);
                 logger.LogInformation("Competing writer published {DocumentId} version {VersionNumber}", documentId, next);

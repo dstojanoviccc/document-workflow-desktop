@@ -217,6 +217,7 @@ public sealed class WorkflowTests : IDisposable
             public WorkingCopy? WorkingCopy => session.WorkingCopy;
             public void Add(WorkingCopy copy) => session.Add(copy);
             public void AddVersion(DocumentVersion version) => session.AddVersion(version);
+            public Task<bool> AppendEventAsync(WorkflowEvent value, CancellationToken cancellationToken = default) => session.AppendEventAsync(value, cancellationToken);
             public void RemoveWorkingCopy() => session.RemoveWorkingCopy();
             public Task CommitAsync(CancellationToken cancellationToken = default) => throw new IOException("Simulated persistence failure.");
             public ValueTask DisposeAsync() => session.DisposeAsync();

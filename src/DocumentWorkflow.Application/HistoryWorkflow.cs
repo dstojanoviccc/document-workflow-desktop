@@ -14,7 +14,7 @@ public sealed partial class DocumentWorkflowService
             context = context with { Evaluation = evaluation, WorkspaceWarning = evaluation.Warning };
         }
         return new(context, history.Versions.Select(version => new VersionHistoryItem(version,
-            version.VersionNumber == context.Document.CurrentVersion, ResolveVersion(context.Document, version.VersionNumber))).ToArray());
+            version.VersionNumber == context.Document.CurrentVersion, ResolveVersion(context.Document, version.VersionNumber))).ToArray(), history.Events);
     }
 
     private string ResolveVersion(DocumentRecord document, int number) => number == 1 ? source.Resolve(document.FileName)

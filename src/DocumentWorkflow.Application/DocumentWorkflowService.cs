@@ -19,11 +19,33 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
             if (recovery is not null)
             {
                 await using var session = await store.BeginAsync(item.Document.Id, cancellationToken);
-                recoveryWarning = await recovery.RecoverAsync(session.Document, session.WorkingCopy, session.Versions, cancellationToken);
-                current = new(session.Document, session.WorkingCopy);
+                var report = await recovery.RecoverWithReportAsync(session.Document, session.WorkingCopy, session.Versions, cancellationToken);
+                recoveryWarning = report.Warning;
+                var changed = false;
+                WorkingCopyEvaluation? observed = null;
+                foreach (var action in report.Actions)
+                    changed |= await session.AppendEventAsync(new(session.Document.Id, WorkflowEventType.RecoveryPerformed,
+                        "recovery:" + Guid.NewGuid(), session.Document.CurrentVersion, session.WorkingCopy?.BaseVersion,
+                        session.WorkingCopy?.CheckedOutAt, action), cancellationToken);
+                if (session.WorkingCopy is { } active)
+                {
+                    observed = await states.EvaluateAsync(session.Document, active, cancellationToken);
+                    changed |= await RecordConflictAsync(session, observed, cancellationToken);
+                }
+                if (changed) await session.CommitAsync(cancellationToken);
+                current = new(session.Document, session.WorkingCopy, Evaluation: observed);
             }
             if (current.WorkingCopy is null) { evaluated.Add(current with { WorkspaceWarning = recoveryWarning }); continue; }
-            var result = await states.EvaluateAsync(current.Document, current.WorkingCopy, cancellationToken).ConfigureAwait(false);
+            var result = current.Evaluation ?? await states.EvaluateAsync(current.Document, current.WorkingCopy, cancellationToken).ConfigureAwait(false);
+            if (recovery is null && result.State == WorkingCopyState.Conflict)
+            {
+                await using var session = await store.BeginAsync(current.Document.Id, cancellationToken);
+                if (session.WorkingCopy is { } active)
+                {
+                    var verified = await states.EvaluateAsync(session.Document, active, cancellationToken);
+                    if (await RecordConflictAsync(session, verified, cancellationToken)) await session.CommitAsync(cancellationToken);
+                }
+            }
             evaluated.Add(current with { Evaluation = result, WorkspaceWarning = result.Warning ?? recoveryWarning });
         }
         return evaluated;
@@ -52,6 +74,9 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
             var hash = await hashes.HashAsync(createdPath, cancellationToken);
             session.Add(new WorkingCopy(document.Id, createdPath, document.CurrentVersion, hash));
             document.CheckOut();
+            var checkout = session.WorkingCopy!;
+            await session.AppendEventAsync(new(document.Id, WorkflowEventType.CheckoutCreated, "checkout:" + checkout.CheckedOutAt.Ticks,
+                document.CurrentVersion, checkout.BaseVersion, checkout.CheckedOutAt, occurredAt: checkout.CheckedOutAt), cancellationToken);
             await session.CommitAsync(cancellationToken);
             committed = true;
             logger.LogInformation("Checkout completed for {DocumentId} at base version {BaseVersion}", document.Id, document.CurrentVersion);
@@ -112,6 +137,7 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
             if (copy.BaseVersion != document.CurrentVersion)
             {
                 var edits = evaluation.State == WorkingCopyState.Conflict;
+                if (await RecordConflictAsync(session, evaluation, cancellationToken)) await session.CommitAsync(cancellationToken);
                 logger.LogWarning("Stale checkout blocked for {DocumentId}: base {BaseVersion}, current {CurrentVersion}", documentId, copy.BaseVersion, document.CurrentVersion);
                 return new(false, new(copy.BaseVersion, document.CurrentVersion, copy.LocalPath, edits),
                     $"The document advanced from v{copy.BaseVersion} to v{document.CurrentVersion}. Your local copy has been kept. Inspect latest, save your copy or explicitly discard the stale checkout.");
@@ -130,6 +156,8 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
                     throw new WorkflowException("The working file changed during check-in. Your edits have been kept. Close the editor, Refresh and retry.");
                 var version = new DocumentVersion(document.Id, next, actual, "Local check-in.", copy.BaseVersion);
                 session.AddVersion(version);
+                await session.AppendEventAsync(new(documentId, WorkflowEventType.CheckInCompleted, "checkin:" + version.Id,
+                    next, copy.BaseVersion, copy.CheckedOutAt, occurredAt: version.CreatedAt), cancellationToken);
                 document.CompleteCheckIn(copy.BaseVersion, next, version.CreatedAt);
                 session.RemoveWorkingCopy();
                 await session.CommitAsync(cancellationToken);
@@ -193,6 +221,9 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
             if (!allowModified && (evaluation.State is WorkingCopyState.Modified or WorkingCopyState.Conflict || evaluation.Issue == EvaluationIssue.Unreadable))
                 throw new WorkflowException("The local copy contains edits or could not be verified. Review the modified-file warning and explicitly confirm discard before continuing.");
             using var deletion = workspace.StageDeletion(documentId, session.Document.FileName, copy.LocalPath);
+            await session.AppendEventAsync(new(documentId,
+                evaluation.State == WorkingCopyState.Conflict ? WorkflowEventType.ConflictDiscarded : WorkflowEventType.CheckoutDiscarded,
+                "discard:" + copy.CheckedOutAt.Ticks, session.Document.CurrentVersion, copy.BaseVersion, copy.CheckedOutAt), cancellationToken);
             session.RemoveWorkingCopy();
             session.Document.DiscardCheckout();
             await session.CommitAsync(cancellationToken);
@@ -212,5 +243,13 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
             if (error is WorkflowException) throw;
             throw new WorkflowException("Discard failed. Close the file in its external application and check workspace permissions before trying again. Checkout metadata has been retained.", error);
         }
+    }
+    private static Task<bool> RecordConflictAsync(IWorkflowSession session, WorkingCopyEvaluation evaluation, CancellationToken cancellationToken)
+    {
+        if (evaluation.Issue != EvaluationIssue.None || evaluation.State != WorkingCopyState.Conflict || session.WorkingCopy is not { } copy)
+            return Task.FromResult(false);
+        return session.AppendEventAsync(new(session.Document.Id, WorkflowEventType.ConflictDetected,
+            $"conflict:{copy.CheckedOutAt.Ticks}:{session.Document.CurrentVersion}", session.Document.CurrentVersion,
+            copy.BaseVersion, copy.CheckedOutAt, "First verified observation of local edits against a newer current version."), cancellationToken);
     }
 }

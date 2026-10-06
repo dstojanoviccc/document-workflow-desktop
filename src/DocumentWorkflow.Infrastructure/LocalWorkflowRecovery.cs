@@ -10,9 +10,14 @@ public sealed class LocalWorkflowRecovery(LocalWorkspaceService workspace, Local
     string recoveryRoot, ILogger<LocalWorkflowRecovery> logger) : IWorkflowRecovery
 {
     public Task<string?> RecoverAsync(DocumentRecord document, WorkingCopy? copy, IReadOnlyList<DocumentVersion> versions,
+        CancellationToken cancellationToken = default) => RecoverWarningAsync(document, copy, versions, cancellationToken);
+    private async Task<string?> RecoverWarningAsync(DocumentRecord document, WorkingCopy? copy, IReadOnlyList<DocumentVersion> versions,
+        CancellationToken cancellationToken) => (await RecoverWithReportAsync(document, copy, versions, cancellationToken)).Warning;
+    public Task<RecoveryReport> RecoverWithReportAsync(DocumentRecord document, WorkingCopy? copy, IReadOnlyList<DocumentVersion> versions,
         CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         var notices = new List<string>();
+        var actions = new List<string>();
         void Attempt(Action action, string label)
         {
             try { cancellationToken.ThrowIfCancellationRequested(); action(); }
@@ -30,6 +35,7 @@ public sealed class LocalWorkflowRecovery(LocalWorkspaceService workspace, Local
             Directory.CreateDirectory(root);
             var destination = Path.Combine(root, document.Id.ToString("N") + "-" + Guid.NewGuid().ToString("N") + "-" + Path.GetFileName(path));
             File.Move(path, destination, false);
+            actions.Add($"Quarantined interrupted artifact: {destination}");
             logger.LogWarning("Unreferenced internal artifact quarantined for {DocumentId} at {RecoveryPath}", document.Id, destination);
             notices.Add($"Interrupted-operation content preserved in recovery: {destination}");
         }
@@ -44,6 +50,7 @@ public sealed class LocalWorkflowRecovery(LocalWorkspaceService workspace, Local
             if (copy is not null && !File.Exists(local) && !Directory.Exists(local))
             {
                 File.Move(staged, local, false);
+                actions.Add($"Restored interrupted working-copy staging: {local}");
                 logger.LogWarning("Interrupted checkout staging restored for {DocumentId}", document.Id);
                 notices.Add("The local working copy was restored after an interrupted operation.");
             }
@@ -65,6 +72,6 @@ public sealed class LocalWorkflowRecovery(LocalWorkspaceService workspace, Local
                 if (!File.Exists(storage.Resolve(document.Id, version.VersionNumber, document.FileName)))
                     notices.Add($"The committed v{version.VersionNumber} artifact is missing. Restore it from backup; metadata has been retained.");
         }, "version storage");
-        return notices.Count == 0 ? null : string.Join(" ", notices);
+        return new RecoveryReport(notices.Count == 0 ? null : string.Join(" ", notices), actions);
     }, cancellationToken);
 }
