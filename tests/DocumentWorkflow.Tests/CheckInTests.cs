@@ -133,4 +133,78 @@ public sealed class CheckInTests : IDisposable
         }
     }
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }
+
+    [Theory]
+    [InlineData("delete-before-copy")]
+    [InlineData("edit-before-copy")]
+    [InlineData("edit-after-copy")]
+    public async Task Changes_after_evaluation_or_preparation_are_rejected_without_losing_edits(string fault)
+    {
+        var path = await InitializeAsync();
+        var injected = new InterceptingContent(Versions, path, fault);
+        await Assert.ThrowsAsync<WorkflowException>(() => Service(content: injected).CheckInAsync(document.Id));
+        await using var db = new AppDbContext(Options);
+        Assert.Equal(1, await db.Versions.CountAsync());
+        Assert.Single(await db.WorkingCopies.ToListAsync());
+        Assert.False(File.Exists(Versions.Resolve(document.Id, 2, document.FileName)));
+        if (fault != "delete-before-copy") Assert.Equal("new edits during check-in", await File.ReadAllTextAsync(path));
+    }
+    [Fact]
+    public async Task Actual_view_model_check_in_updates_row_and_rejects_duplicate_command_execution()
+    {
+        var path = await InitializeAsync(edit: false);
+        var vm = new DocumentWorkflow.App.MainViewModel(Service(), new NoDialogs(), NullLogger<DocumentWorkflow.App.MainViewModel>.Instance);
+        await vm.RefreshAsync();
+        Assert.False(Assert.Single(vm.Documents).CheckInCommand.CanExecute(null));
+        await File.AppendAllTextAsync(path, "local edit");
+        await vm.RefreshAsync();
+        var row = Assert.Single(vm.Documents);
+        Assert.True(row.CanCheckIn);
+        row.ViewDetailsCommand.Execute(null);
+        await Task.WhenAll(row.CheckInCommand.ExecuteAsync(), row.CheckInCommand.ExecuteAsync());
+        var completed = Assert.Single(vm.Documents);
+        Assert.Equal("v2", completed.Version);
+        Assert.Equal("Available", completed.Status);
+        Assert.False(completed.CheckInCommand.CanExecute(null));
+        Assert.False(completed.HasWorkingCopy);
+        Assert.Equal("v2", vm.SelectedDocument!.Version);
+        Assert.Contains("checked in as v2", vm.Message);
+        Assert.False(vm.IsBusy);
+        await using var db = new AppDbContext(Options);
+        Assert.Equal(2, await db.Versions.CountAsync());
+    }
+    [Fact]
+    public async Task Stale_modified_row_fails_safely_when_file_is_missing_and_command_remains_usable()
+    {
+        var path = await InitializeAsync();
+        var vm = new DocumentWorkflow.App.MainViewModel(Service(), new NoDialogs(), NullLogger<DocumentWorkflow.App.MainViewModel>.Instance);
+        await vm.RefreshAsync();
+        var row = Assert.Single(vm.Documents);
+        Assert.True(row.CheckInCommand.CanExecute(null));
+        File.Delete(path);
+        await row.CheckInCommand.ExecuteAsync();
+        var missing = Assert.Single(vm.Documents);
+        Assert.False(missing.CanCheckIn);
+        Assert.True(missing.HasWorkingCopy);
+        Assert.Contains("missing", vm.Message);
+        Assert.False(vm.IsBusy);
+        await File.WriteAllTextAsync(path, "recovered local edits");
+        await vm.RefreshAsync();
+        Assert.True(Assert.Single(vm.Documents).CanCheckIn);
+    }
+    private sealed class NoDialogs : DocumentWorkflow.App.IUserDialogService
+    { public bool ConfirmDiscard(string name, bool edits) => false; }
+    private sealed class InterceptingContent(IVersionContentStore inner, string path, string fault) : IVersionContentStore
+    {
+        public string Resolve(Guid id, int version, string name) => inner.Resolve(id, version, name);
+        public void Delete(Guid id, int version, string name) => inner.Delete(id, version, name);
+        public async Task<string> CreateAsync(Guid id, int version, string name, string workingPath, string hash, CancellationToken cancellationToken = default)
+        {
+            if (fault == "delete-before-copy") File.Delete(path);
+            if (fault == "edit-before-copy") await File.WriteAllTextAsync(path, "new edits during check-in", cancellationToken);
+            var actual = await inner.CreateAsync(id, version, name, workingPath, hash, cancellationToken);
+            if (fault == "edit-after-copy") await File.WriteAllTextAsync(path, "new edits during check-in", cancellationToken);
+            return actual;
+        }
+    }
 }
