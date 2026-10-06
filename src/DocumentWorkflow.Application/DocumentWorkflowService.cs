@@ -157,6 +157,7 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
                     var published = verification.Versions.SingleOrDefault(x => x.VersionNumber == next);
                     if (published is not null)
                     {
+                        committed = true;
                         logger.LogWarning(error, "Check-in commit confirmed from metadata after completion error for {DocumentId}", documentId);
                         if (verification.WorkingCopy is null && workspace.Exists(documentId, document!.FileName, workspace.Resolve(documentId, document.FileName)))
                         {
@@ -173,6 +174,7 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
                 {
                     // If metadata cannot be verified, preserve the artifact for conservative reconciliation.
                     logger.LogError(cleanupError, "Check-in recovery deferred for {DocumentId}; no unverified artifact is removed", documentId);
+                    if (committed) return new(true, Message: "Check-in is committed, but local cleanup could not finish. Refresh for recovery guidance; the immutable version has been preserved.");
                 }
             }
             logger.LogError(error, "Check-in failed for {DocumentId}", documentId);
