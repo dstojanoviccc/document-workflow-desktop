@@ -27,6 +27,11 @@
       </StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
      </DataGrid.Columns>
     </DataGrid>
+    <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}">
+     <TextBlock Text="Your document library is empty." FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+     <TextBlock Text="Load five optional, generic sample documents to evaluate the workflow." Margin="0,8,0,16" Foreground="#64748B"/>
+     <Button Content="Load demo data" Command="{Binding LoadDemoCommand}" HorizontalAlignment="Center" AutomationProperties.AutomationId="LoadDemoButton"/>
+    </StackPanel>
     <Border Grid.Row="2" Visibility="{Binding DetailsVisible, Converter={StaticResource BoolVisibility}}" Background="#F4F6F8" Padding="16" Margin="0,16,0,0" MaxHeight="220">
      <ScrollViewer VerticalScrollBarVisibility="Auto">
       <Grid>
@@ -64,6 +69,6 @@
     </Border>
    </Grid>
   </Border>
-  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 6 • immutable version history and workflow timeline" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="{Binding VersionDisplay}" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
  </Grid>
 </Window>

@@ -249,8 +249,8 @@ public sealed class AuditTests : IDisposable
         Directory.CreateDirectory(env.SourceRoot);
         var initializer = new DatabaseInitializer(new Factory(env.Options), new DemoDocumentSource(env.SourceRoot),
             new FileHashService(), NullLogger<DatabaseInitializer>.Instance);
-        await initializer.InitializeAsync();
-        await initializer.InitializeAsync();
+        await initializer.InitializeAsync(seedDemo: true);
+        await initializer.InitializeAsync(seedDemo: true);
         await using var db = env.Db();
         var events = await db.WorkflowEvents.ToListAsync();
         Assert.Equal(5, events.Count);

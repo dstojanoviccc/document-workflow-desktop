@@ -13,8 +13,8 @@ public class SeedTests
         try
         {
             var initializer = new DatabaseInitializer(new TestFactory(options), new DemoDocumentSource(Path.Combine(AppContext.BaseDirectory, "demo-data")), new FileHashService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance);
-            await initializer.InitializeAsync();
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(seedDemo: true);
+            await initializer.InitializeAsync(seedDemo: true);
             await using var db = new AppDbContext(options);
             Assert.Equal(5, await db.Documents.CountAsync());
             Assert.Equal(5, await db.Versions.CountAsync());

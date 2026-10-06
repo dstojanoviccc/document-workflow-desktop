@@ -23,18 +23,17 @@ public partial class App : System.Windows.Application
             {
                 Args = e.Args, ContentRootPath = AppContext.BaseDirectory
             });
-            var directory = builder.Configuration["DocumentWorkflow:DataDirectory"];
-            if (string.IsNullOrWhiteSpace(directory))
-                directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DocumentWorkflowDesktop");
-            directory = Path.GetFullPath(directory);
-            Directory.CreateDirectory(directory);
-            var connection = new SqliteConnectionStringBuilder { DataSource = Path.Combine(directory, "documents.db") }.ToString();
+            var paths = RuntimePaths.Resolve(AppContext.BaseDirectory, builder.Configuration["DocumentWorkflow:DataDirectory"],
+                builder.Configuration["DocumentWorkflow:WorkspaceDirectory"], builder.Configuration["DocumentWorkflow:DemoSourceDirectory"]);
+            paths.CreateDirectories();
+            var directory = paths.DataDirectory;
+            var connection = new SqliteConnectionStringBuilder { DataSource = paths.Database }.ToString();
             builder.Logging.ClearProviders();
             builder.Logging.AddDebug();
-            builder.Logging.AddProvider(new JsonFileLoggerProvider(Path.Combine(directory, "logs")));
+            builder.Logging.AddProvider(new JsonFileLoggerProvider(paths.Logs));
             builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(connection));
-            var sourceDirectory = Path.GetFullPath(builder.Configuration["DocumentWorkflow:DemoSourceDirectory"] ?? Path.Combine(AppContext.BaseDirectory, "demo-data"));
-            var workspaceDirectory = Path.GetFullPath(builder.Configuration["DocumentWorkflow:WorkspaceDirectory"] ?? Path.Combine(directory, "workspace"));
+            var sourceDirectory = paths.SourceDirectory;
+            var workspaceDirectory = paths.WorkspaceDirectory;
             builder.Services.AddSingleton<IDocumentSource>(new DemoDocumentSource(sourceDirectory));
             builder.Services.AddSingleton<IWorkspaceService>(new LocalWorkspaceService(workspaceDirectory, sourceDirectory));
             builder.Services.AddSingleton<IFileHashService, FileHashService>();
@@ -49,6 +48,7 @@ public partial class App : System.Windows.Application
             builder.Services.AddSingleton<IDocumentWorkflowService, DocumentWorkflowService>();
             builder.Services.AddSingleton<IUserDialogService, UserDialogService>();
             builder.Services.AddSingleton<DatabaseInitializer>();
+            builder.Services.AddSingleton<IDemoDataLoader>(provider => provider.GetRequiredService<DatabaseInitializer>());
             builder.Services.AddSingleton<IDocumentRepository, DocumentRepository>();
             builder.Services.AddSingleton<MainViewModel>();
             builder.Services.AddSingleton<MainWindow>();

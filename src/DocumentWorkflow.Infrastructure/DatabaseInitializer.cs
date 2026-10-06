@@ -6,17 +6,23 @@ using Microsoft.Extensions.Logging;
 namespace DocumentWorkflow.Infrastructure;
 
 public sealed class DatabaseInitializer(IDbContextFactory<AppDbContext> factory, IDocumentSource source,
-    IFileHashService hashes, ILogger<DatabaseInitializer> logger)
+    IFileHashService hashes, ILogger<DatabaseInitializer> logger) : IDemoDataLoader
 {
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    private static readonly string[] DemoNames = ["Product-Catalog.xlsx", "Supplier-Agreement.docx", "Installation-Guide.pdf", "Pricing-Overview.xlsx", "Technical-Specification.docx"];
+    public async Task LoadDemoDataAsync(CancellationToken cancellationToken = default)
+    {
+        // An explicit evaluation action; reject incomplete packaged samples before writing metadata.
+        foreach (var name in DemoNames) await hashes.HashAsync(source.Resolve(name), cancellationToken);
+        await InitializeAsync(cancellationToken, seedDemo: true);
+    }
+    public async Task InitializeAsync(CancellationToken cancellationToken = default, bool seedDemo = false)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.MigrateAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (!await db.Documents.AnyAsync(cancellationToken))
+        if (seedDemo && !await db.Documents.AnyAsync(cancellationToken))
         {
-            string[] names = ["Product-Catalog.xlsx", "Supplier-Agreement.docx", "Installation-Guide.pdf", "Pricing-Overview.xlsx", "Technical-Specification.docx"];
-            foreach (var name in names)
+            foreach (var name in DemoNames)
             {
                 var document = new DocumentRecord(Path.GetFileNameWithoutExtension(name).Replace('-', ' '), name);
                 db.Documents.Add(document);

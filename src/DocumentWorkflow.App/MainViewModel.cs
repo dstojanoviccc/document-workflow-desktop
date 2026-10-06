@@ -70,12 +70,19 @@ public sealed class MainViewModel : ObservableViewModel
     private readonly ILogger<MainViewModel> logger;
     private bool initialized;
     private bool activationPending;
-    public MainViewModel(IDocumentWorkflowService workflow, IUserDialogService dialogs, ILogger<MainViewModel> logger)
+    public MainViewModel(IDocumentWorkflowService workflow, IUserDialogService dialogs, ILogger<MainViewModel> logger, IDemoDataLoader? demo = null)
     {
         this.workflow = workflow;
         this.dialogs = dialogs;
         this.logger = logger;
         RefreshCommand = new AsyncCommand(RefreshAsync, ReportError);
+        LoadDemoCommand = new AsyncCommand(async () =>
+        {
+            if (demo is null || IsBusy || Documents.Count != 0) return;
+            Busy(true);
+            try { await demo.LoadDemoDataAsync(); await LoadAsync(); SetMessage("Optional demo documents loaded. Check out a document to begin."); }
+            finally { await FinishAsync(); }
+        }, ReportError, () => demo is not null && !IsBusy && Documents.Count == 0);
         HistoryCommand = new AsyncCommand(async () =>
         {
             if (SelectedDocument is null || IsBusy) return;
@@ -88,6 +95,9 @@ public sealed class MainViewModel : ObservableViewModel
     }
     public ObservableCollection<DocumentListItemViewModel> Documents { get; } = [];
     public AsyncCommand RefreshCommand { get; }
+    public AsyncCommand LoadDemoCommand { get; }
+    public bool IsEmpty => initialized && Documents.Count == 0;
+    public string VersionDisplay => ApplicationVersion.Display;
     public AsyncCommand HistoryCommand { get; }
     public HistoryViewModel? ActiveHistory { get; private set; }
     public event Action<HistoryViewModel>? HistoryRequested;
@@ -98,7 +108,7 @@ public sealed class MainViewModel : ObservableViewModel
     public string CountText => $"{Documents.Count} documents";
     public bool DetailsVisible { get; private set; }
     public DocumentListItemViewModel? SelectedDocument { get; private set; }
-    private void Busy(bool value) { IsBusy = value; Notify(nameof(IsBusy)); }
+    private void Busy(bool value) { IsBusy = value; Notify(nameof(IsBusy)); LoadDemoCommand.NotifyCanExecuteChanged(); }
     private void SetMessage(string text) { Message = text; Notify(nameof(Message)); }
     private async Task LoadAsync()
     {
@@ -112,6 +122,8 @@ public sealed class MainViewModel : ObservableViewModel
         Notify(nameof(SelectedDocument));
         Notify(nameof(DetailsVisible));
         Notify(nameof(CountText));
+        Notify(nameof(IsEmpty));
+        LoadDemoCommand.NotifyCanExecuteChanged();
         if (ActiveHistory is not null) await ActiveHistory.RefreshAsync();
         logger.LogInformation("Loaded {DocumentCount} documents with {WorkingCopyCount} active working copies", documents.Count, documents.Count(x => x.WorkingCopy is not null));
     }
