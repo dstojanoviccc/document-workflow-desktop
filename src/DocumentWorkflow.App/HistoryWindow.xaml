@@ -1,0 +1,26 @@
+<Window x:Class="DocumentWorkflow.App.HistoryWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="{Binding Title}" Width="1050" Height="790" MinWidth="900" MinHeight="650" Background="#F4F6F8" FontFamily="Segoe UI" Foreground="#202D3D" WindowStartupLocation="CenterOwner">
+ <Window.Resources>
+  <Style TargetType="TextBox"><Setter Property="IsReadOnly" Value="True"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="VerticalScrollBarVisibility" Value="Auto"/><Setter Property="Padding" Value="8"/><Setter Property="Background" Value="#F4F6F8"/><Setter Property="BorderBrush" Value="#DEE4EB"/></Style>
+  <Style TargetType="DataGrid"><Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/><Setter Property="CanUserSortColumns" Value="False"/><Setter Property="SelectionMode" Value="Single"/><Setter Property="HeadersVisibility" Value="Column"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="RowHeight" Value="32"/></Style>
+ </Window.Resources>
+ <Grid Margin="24">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="Auto"/><RowDefinition Height="150"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="80"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel><Button Content="Refresh history" Command="{Binding RefreshCommand}" DockPanel.Dock="Right"/><TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold"/></DockPanel>
+  <Border Grid.Row="1" Padding="12" Margin="0,12,0,12">
+   <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#E8F0FA"/><Style.Triggers><DataTrigger Binding="{Binding IsConflict}" Value="True"><Setter Property="Background" Value="#FFE3D5"/></DataTrigger></Style.Triggers></Style></Border.Style>
+   <WrapPanel><TextBlock Text="{Binding CurrentVersion}" FontSize="16" FontWeight="SemiBold" Margin="0,0,24,0"/><TextBlock Text="{Binding CheckoutBase}" FontSize="16" FontWeight="SemiBold" Margin="0,0,24,0"/><TextBlock Text="{Binding LocalState}" FontSize="16" TextWrapping="Wrap"/></WrapPanel>
+  </Border>
+  <DataGrid Grid.Row="2" ItemsSource="{Binding Versions}" SelectedItem="{Binding SelectedVersion}" AutomationProperties.AutomationId="VersionHistory">
+   <DataGrid.Columns><DataGridTextColumn Header="Version • newest first" Binding="{Binding Version}" Width="145"/><DataGridTextColumn Header="" Binding="{Binding CurrentBadge}" Width="70"/><DataGridTextColumn Header="Created (local)" Binding="{Binding Created}" Width="175"/><DataGridTextColumn Header="SHA-256" Binding="{Binding CompactHash}" Width="155"/><DataGridTextColumn Header="Base" Binding="{Binding BaseVersion}" Width="110"/><DataGridTextColumn Header="Origin" Binding="{Binding Origin}" Width="*"/></DataGrid.Columns>
+  </DataGrid>
+  <DockPanel Grid.Row="3" Margin="0,8,0,6"><Button Content="Open selected version" Command="{Binding OpenVersionCommand}" DockPanel.Dock="Right"/><TextBlock Text="Version metadata • select and copy text below" VerticalAlignment="Center" FontWeight="SemiBold"/></DockPanel>
+  <TextBox Grid.Row="4" Text="{Binding VersionDetails, Mode=OneWay}" AutomationProperties.AutomationId="VersionMetadata"/>
+  <StackPanel Grid.Row="5" Margin="0,14,0,6"><TextBlock Text="Workflow timeline" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding AuditNotice}" Foreground="#64748B" TextWrapping="Wrap"/><TextBlock Text="{Binding EmptyEvents}" Foreground="#64748B"/></StackPanel>
+  <DataGrid Grid.Row="6" ItemsSource="{Binding Events}" SelectedItem="{Binding SelectedEvent}" RowHeight="Auto" AutomationProperties.AutomationId="WorkflowTimeline">
+   <DataGrid.Columns><DataGridTextColumn Header="Time (local)" Binding="{Binding Timestamp}" Width="175"/><DataGridTextColumn Header="Event" Binding="{Binding Label}" Width="330"/><DataGridTextColumn Header="Context" Binding="{Binding Context}" Width="*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="4"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn></DataGrid.Columns>
+  </DataGrid>
+  <TextBox Grid.Row="7" Text="{Binding EventDetails, Mode=OneWay}" Margin="0,6,0,0"/>
+  <TextBlock Grid.Row="8" Text="{Binding Message}" Margin="0,8,0,0" Foreground="#64748B" TextWrapping="Wrap"/>
+ </Grid>
+</Window>

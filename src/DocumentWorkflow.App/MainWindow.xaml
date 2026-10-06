@@ -47,7 +47,7 @@
         <TextBlock Text="{Binding SelectedDocument.CurrentHash, StringFormat='Current hash: {0}'}"/>
         <TextBlock Text="{Binding SelectedDocument.ContentsComparison}" TextWrapping="Wrap" Margin="0,6,0,0"/>
        </StackPanel>
-       <Button Grid.Column="2" Content="Close" Command="{Binding CloseDetailsCommand}" VerticalAlignment="Top"/>
+       <StackPanel Grid.Column="2" VerticalAlignment="Top"><Button Content="Version history" Command="{Binding HistoryCommand}" Margin="0,0,0,8"/><Button Content="Close" Command="{Binding CloseDetailsCommand}"/></StackPanel>
        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding SelectedDocument.LocalPath, StringFormat='Local copy: {0}'}" Visibility="{Binding SelectedDocument.HasWorkingCopy, Converter={StaticResource BoolVisibility}}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11" Foreground="#64748B"/>
        <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Text="{Binding SelectedDocument.Warning}" Visibility="{Binding SelectedDocument.HasWarning, Converter={StaticResource BoolVisibility}}" Foreground="#8B5914" Margin="0,6,0,0" TextWrapping="Wrap"/>
        <StackPanel Grid.Row="3" Grid.ColumnSpan="3" Visibility="{Binding SelectedDocument.IsStaleBase, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0">
@@ -64,6 +64,6 @@
     </Border>
    </Grid>
   </Border>
-  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 5 • conflict protection and interrupted-operation recovery" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 6 • immutable version history and workflow timeline" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
  </Grid>
 </Window>

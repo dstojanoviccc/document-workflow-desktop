@@ -76,10 +76,22 @@ public sealed class MainViewModel : ObservableViewModel
         this.dialogs = dialogs;
         this.logger = logger;
         RefreshCommand = new AsyncCommand(RefreshAsync, ReportError);
+        HistoryCommand = new AsyncCommand(async () =>
+        {
+            if (SelectedDocument is null || IsBusy) return;
+            var history = new HistoryViewModel(SelectedDocument.Id, workflow);
+            await history.RefreshAsync();
+            ActiveHistory = history;
+            HistoryRequested?.Invoke(history);
+        }, ReportError);
         CloseDetailsCommand = new RelayCommand(() => { DetailsVisible = false; Notify(nameof(DetailsVisible)); });
     }
     public ObservableCollection<DocumentListItemViewModel> Documents { get; } = [];
     public AsyncCommand RefreshCommand { get; }
+    public AsyncCommand HistoryCommand { get; }
+    public HistoryViewModel? ActiveHistory { get; private set; }
+    public event Action<HistoryViewModel>? HistoryRequested;
+    public void CloseHistory(HistoryViewModel history) { if (ActiveHistory == history) ActiveHistory = null; }
     public RelayCommand CloseDetailsCommand { get; }
     public bool IsBusy { get; private set; }
     public string Message { get; private set; } = "Loading documents…";
@@ -100,6 +112,7 @@ public sealed class MainViewModel : ObservableViewModel
         Notify(nameof(SelectedDocument));
         Notify(nameof(DetailsVisible));
         Notify(nameof(CountText));
+        if (ActiveHistory is not null) await ActiveHistory.RefreshAsync();
         logger.LogInformation("Loaded {DocumentCount} documents with {WorkingCopyCount} active working copies", documents.Count, documents.Count(x => x.WorkingCopy is not null));
     }
     public async Task RefreshAsync()
