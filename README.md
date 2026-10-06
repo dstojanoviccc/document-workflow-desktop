@@ -4,7 +4,7 @@ A .NET/WPF desktop application demonstrating document checkout, local editing, v
 
 ## Overview
 
-This fresh, generic public implementation is built in incremental, tested milestones. **Phase 3 implements SHA-256 local modification detection**, building on checkout, Open and discard. Check-in and conflicts remain roadmap items.
+This fresh, generic public implementation is built in incremental, tested milestones. **Phase 4 implements explicit local check-in and immutable version creation**, building on checkout, Open, discard and SHA-256 modification detection. Conflict resolution remains a roadmap item.
 
 Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. Their copies in the application output directory simulate a central document repository. Checkout creates a separate physical working file; external editors never open the central file through the application.
 
@@ -23,8 +23,11 @@ Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. The
 - Missing or inaccessible working files show a warning and disable Open, without silently recreating files.
 - Detailed checkout metadata, restrained WPF styling, MVVM, DI, hosting and structured local logs.
 - Automated domain, SQLite, workspace, hashing, workflow, concurrency and view-model tests.
+- Explicit Check in for verified Modified copies, new version artifacts, atomic current-version advancement and checkout completion.
 
 Example: **Available → Check Out → Unchanged → Edit/save externally → Modified → Discard → Available**. Restoring the exact original bytes returns a working copy to Unchanged.
+
+Check-in flow: **Available v1 → Check Out → Unchanged → Edit/save → Modified → Check in → Available v2**. The next checkout copies v2; v1 remains intact.
 
 ## Architecture
 
@@ -49,11 +52,26 @@ Key components:
 - `WorkflowStore`: SQLite write transactions and atomic document/working-copy metadata changes.
 - `LocalWorkspaceService`: deterministic copy paths, path validation, existence checks and staged deletion.
 - `FileHashService`: reusable streaming SHA-256 hashing.
+- `LocalVersionContentStore` / `IVersionContentStore`: separate immutable version paths, durable copy and verification of stored bytes.
 - `DemoDocumentSource`: safe source-file resolution.
 - `ShellWorkingCopyOpener`: Windows shell file associations.
 - `DatabaseInitializer`: migration, first-run seeding and upgrade of Phase 1 placeholder hashes.
 
 Phase 1 databases are retained. Placeholder initial-version hashes are replaced with real demo-file hashes without changing document IDs or creating new versions. Existing content hashes and checkout metadata are preserved. No schema change was needed in Phases 2 or 3.
+
+Phase 4 adds the nullable `DocumentVersion.BaseVersion` column through an additive EF migration. Existing version rows are retained. New versions record their origin, SHA-256, creation time and deterministic next number; the document's updated time equals the new version's creation time. The existing unique document/version index remains in force. The app has no version-history screen; the current version is shown in the row and Details, with complete metadata retained in SQLite.
+
+### Check-in storage and transaction
+
+v1 uses the packaged source artifact; v2 and later use `DataDirectory/versions/{document-id}/{version-number}/{file-name}`. Check-in never writes to v1 or overwrites a version artifact. Version immutability is enforced by application operations and CreateNew, rather than OS ACLs: manually editing application storage is unsupported.
+
+Check-in runs off the UI thread and begins a serialized SQLite write transaction. It reevaluates through the Phase 3 evaluator, rejects absent/unchanged/missing/unreadable checkouts and checks the checkout base still matches the current version. This base guard preserves edits; full conflict resolution is deferred.
+
+The service copies under a read handle that denies external writing/deletion, flushes the artifact to disk and hashes the stored artifact. It must match the fresh evaluation hash; otherwise the unpublished artifact is removed and the checkout remains. After preparation, the local copy is renamed to the existing reversible `.discard` staging path. Its hash is checked again under a read lock through database commit, detecting edits between copying and staging.
+
+A single SQLite transaction inserts the new version, advances the document and removes active checkout metadata. Before commit, failures roll back database changes, restore the staged working file and remove the artifact created by that attempt. Existing destination artifacts are never removed or overwritten. Only after successful commit is the staged local file deleted. Cleanup failure reports a success-with-cleanup warning; it does not undo the durable version. UI rows refresh immediately to Available at the new version.
+
+Filesystem and SQLite are not one physical transaction. A process/machine crash can leave an unpublished version artifact or staged local file. Retries refuse to overwrite leftover artifacts; inspect the database and preserve any local edits before manual recovery. Automatic crash recovery, durable retry identities and uncertain-commit recovery are deferred. Back up the database, versions directory and working copies together; keep packaged v1 fixtures available. Close external editors before check-in, since incompatible open handles fail safely.
 
 ### Derived working-copy state
 
@@ -105,6 +123,7 @@ Defaults:
 ```text
 %LOCALAPPDATA%\DocumentWorkflowDesktop\documents.db
 %LOCALAPPDATA%\DocumentWorkflowDesktop\workspace\{document-id}\{file-name}
+%LOCALAPPDATA%\DocumentWorkflowDesktop\versions\{document-id}\{version-number}\{file-name}
 %LOCALAPPDATA%\DocumentWorkflowDesktop\logs\workflow-yyyy-MM-dd.jsonl
 ```
 
@@ -173,19 +192,59 @@ Automated coverage includes real SQLite migration and persistence, Phase 1 place
 
 Phase 3 has **50 passing tests**. Added coverage includes same-size content edits, timestamp-only changes, exact restoration, exclusive read locks and recovery, missing state, activation coalescing, baseline/current details, fresh-service restart reconciliation, and actual view-model discard commands with cancellation, confirmation and an edit during confirmation. A valid XLSX fixture is edited inside its OOXML package without requiring Office; source hashes and version metadata remain unchanged.
 
+Phase 4 has **68 passing tests (18 added)** and adds artifact immutability/hash tests, successful valid-XLSX check-in, exact base-byte preservation, repository/service restart, next checkout from v2, unchanged/missing/exclusive-lock rejection, destination failure, injected metadata failure, SQL-write rollback before commit, competing services, disappearing/changing files during preparation, duplicate UI invocation, immediate row/details updates and verified-state command eligibility. Tests use real SQLite and isolated temporary paths. Check-in success, rollback and races are automated; the desktop smoke test confirmed launch, Unchanged checkout and a Modified XLSX row with the new Check in action and fitting layout. It did not execute the final Check in through desktop automation.
+
+### Phase 4 manual acceptance
+
+1. Launch with a fresh isolated DataDirectory. Check out Product Catalog; verify Unchanged and no Check in action.
+2. Open in Excel, edit/save, close Excel and return to the app (or Refresh). Verify Modified and Check in.
+3. Click Check in. Verify Available, v2, no active Open/Discard/Check in actions and a success message immediately. Details must show v2.
+4. Inspect `versions/{document-id}/2/Product-Catalog.xlsx` under the isolated DataDirectory. Verify its SHA-256 matches the v2 SQLite metadata and the saved edited bytes. The packaged demo v1 must remain byte-identical.
+5. Restart; verify Available v2. Check out again; verify base v2, Unchanged and the edited content when opened.
+6. Try unchanged, missing and locked-file scenarios. No new version should appear, and failures must retain the checkout and any surviving edits. Restore access and retry.
+
 Desktop verification used an isolated temporary database and confirmed launch, checkout showing Unchanged, a valid XLSX cell edit while minimized becoming Modified on activation, and differing hash details. Actual process restarts detected Modified and then Unchanged after exact byte restoration. The details panel was subsequently made compact and scrollable and build-verified. The modified warning/cancellation/deletion paths are covered by automated view-model/filesystem tests; Excel interaction and the final compact layout remain available for user acceptance above. Earlier Phase 2 desktop checks covered PDF shell dispatch, confirmation cancellation and missing-file reconciliation. Word fixtures passed package checks but their bundled visual renderer was unavailable in this environment.
 
 ## Roadmap
 
-After Phase 3 review:
+After Phase 4 review:
 
-- Phase 4: actual check-in and new version creation, with an explicit persistence/failure design and tests.
-- Later: backend conflict detection and explicit conflict resolution.
+- Phase 5: competing-version detection and explicit conflict/recovery flows, preserving local edits and immutable artifacts.
 - Later: check-in retry and idempotency behavior.
 - Later: crash recovery improvements and audit history.
 
-Phase 3 does not include FileSystemWatcher, check-in, new workflow versions or conflicts. Content comparison uses whole-file SHA-256; evaluation cost grows with file size, and a live external write can require another Refresh. Stronger concurrent-edit/crash recovery remains future work.
+Phase 4 does not include remote APIs, cloud storage, automatic check-in, FileSystemWatcher, merge/force-overwrite workflows, arbitrary external ingestion or installer work. Content comparison uses whole-file SHA-256; evaluation cost grows with file size. Stronger crash recovery remains future work.
 
 ## Screenshots
 
 The Phase 3 state labels and hash details have been inspected during desktop verification. Saved screenshots are pending manual acceptance.
+
+## Phase 4 implementation files
+
+Exact files added or changed from the approved Phase 3 baseline:
+
+```text
+README.md
+src/DocumentWorkflow.App/App.xaml.cs
+src/DocumentWorkflow.App/Commands.cs
+src/DocumentWorkflow.App/MainViewModel.cs
+src/DocumentWorkflow.App/MainWindow.xaml
+src/DocumentWorkflow.Application/DocumentWorkflowService.cs
+src/DocumentWorkflow.Application/IDocumentWorkflowService.cs
+src/DocumentWorkflow.Application/IVersionContentStore.cs
+src/DocumentWorkflow.Application/IWorkflowStore.cs
+src/DocumentWorkflow.Application/IWorkspaceService.cs
+src/DocumentWorkflow.Domain/Documents.cs
+src/DocumentWorkflow.Infrastructure/LocalVersionContentStore.cs
+src/DocumentWorkflow.Infrastructure/LocalWorkspaceService.cs
+src/DocumentWorkflow.Infrastructure/Migrations/20261006100726_ImmutableVersions.Designer.cs
+src/DocumentWorkflow.Infrastructure/Migrations/20261006100726_ImmutableVersions.cs
+src/DocumentWorkflow.Infrastructure/Migrations/AppDbContextModelSnapshot.cs
+src/DocumentWorkflow.Infrastructure/WorkflowStore.cs
+tests/DocumentWorkflow.Tests/ActivationTests.cs
+tests/DocumentWorkflow.Tests/CheckInTests.cs
+tests/DocumentWorkflow.Tests/VersionContentTests.cs
+tests/DocumentWorkflow.Tests/ViewModelTests.cs
+tests/DocumentWorkflow.Tests/WorkflowTests.cs
+tests/DocumentWorkflow.Tests/WorkflowViewModelTests.cs
+```
