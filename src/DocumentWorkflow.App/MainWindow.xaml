@@ -50,6 +50,15 @@
        <Button Grid.Column="2" Content="Close" Command="{Binding CloseDetailsCommand}" VerticalAlignment="Top"/>
        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding SelectedDocument.LocalPath, StringFormat='Local copy: {0}'}" Visibility="{Binding SelectedDocument.HasWorkingCopy, Converter={StaticResource BoolVisibility}}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11" Foreground="#64748B"/>
        <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Text="{Binding SelectedDocument.Warning}" Visibility="{Binding SelectedDocument.HasWarning, Converter={StaticResource BoolVisibility}}" Foreground="#8B5914" Margin="0,6,0,0" TextWrapping="Wrap"/>
+       <StackPanel Grid.Row="3" Grid.ColumnSpan="3" Visibility="{Binding SelectedDocument.IsStaleBase, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0">
+        <TextBlock Text="{Binding SelectedDocument.ConflictExplanation}" TextWrapping="Wrap" Foreground="#8B5914"/>
+        <WrapPanel Margin="0,8,0,0">
+         <Button Content="Keep my local edits" Command="{Binding SelectedDocument.KeepLocalCommand}" Margin="0,0,8,0"/>
+         <Button Content="Open latest" Command="{Binding SelectedDocument.OpenLatestCommand}" Margin="0,0,8,0"/>
+         <Button Content="Save local copy" Command="{Binding SelectedDocument.SaveLocalCommand}" Margin="0,0,8,0"/>
+         <Button Content="Discard local checkout" Command="{Binding SelectedDocument.DiscardCommand}"/>
+        </WrapPanel>
+       </StackPanel>
       </Grid>
      </ScrollViewer>
     </Border>
