@@ -39,6 +39,10 @@ public partial class App : System.Windows.Application
             builder.Services.AddSingleton<IWorkspaceService>(new LocalWorkspaceService(workspaceDirectory, sourceDirectory));
             builder.Services.AddSingleton<IFileHashService, FileHashService>();
             builder.Services.AddSingleton<IVersionContentStore>(new LocalVersionContentStore(Path.Combine(directory, "versions"), workspaceDirectory, sourceDirectory, new FileHashService()));
+            builder.Services.AddSingleton<IWorkflowRecovery>(provider => new LocalWorkflowRecovery(
+                (LocalWorkspaceService)provider.GetRequiredService<IWorkspaceService>(),
+                (LocalVersionContentStore)provider.GetRequiredService<IVersionContentStore>(), Path.Combine(directory, "recovery"),
+                provider.GetRequiredService<ILogger<LocalWorkflowRecovery>>()));
             builder.Services.AddSingleton<IWorkflowStore, WorkflowStore>();
             builder.Services.AddSingleton<IWorkingCopyOpener, ShellWorkingCopyOpener>();
             builder.Services.AddSingleton(provider => new WorkingCopyStateService(provider.GetRequiredService<IWorkspaceService>(), provider.GetRequiredService<IFileHashService>(), provider.GetRequiredService<ILogger<WorkingCopyStateService>>()));

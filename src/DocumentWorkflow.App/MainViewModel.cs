@@ -17,6 +17,9 @@ public sealed class DocumentListItemViewModel
         OpenCommand = new AsyncCommand(() => run(this, "open"), onError);
         DiscardCommand = new AsyncCommand(() => run(this, "discard"), onError);
         CheckInCommand = new AsyncCommand(() => run(this, "checkin"), onError, () => CanCheckIn);
+        OpenLatestCommand = new AsyncCommand(() => run(this, "latest"), onError);
+        SaveLocalCommand = new AsyncCommand(() => run(this, "savecopy"), onError);
+        KeepLocalCommand = new AsyncCommand(() => run(this, "keep"), onError);
     }
     public Guid Id => snapshot.Document.Id;
     public string LogicalName => snapshot.Document.LogicalName;
@@ -24,14 +27,21 @@ public sealed class DocumentListItemViewModel
     public string Version => $"v{snapshot.Document.CurrentVersion}";
     public WorkingCopyState? WorkingState => snapshot.Evaluation?.State;
     public bool IsModified => WorkingState == WorkingCopyState.Modified;
-    public bool RequiresModifiedDiscardWarning => IsModified || snapshot.Evaluation is null || snapshot.Evaluation.Issue == EvaluationIssue.Unreadable;
+    public bool IsConflict => WorkingState == WorkingCopyState.Conflict;
+    public bool IsStaleBase => snapshot.WorkingCopy is { } copy && copy.BaseVersion != snapshot.Document.CurrentVersion;
+    public string RecoveryLabel => IsStaleBase ? "Details / Recover" : "View Details";
+    public string OpenLabel => IsConflict ? "Open my copy" : "Open";
+    public string ConflictExplanation => !IsStaleBase ? "" : IsConflict
+        ? $"Your edits still exist, but {Version} is now current. This checkout is based on {BaseVersion}; check-in is blocked."
+        : $"This checkout is based on {BaseVersion}, while {Version} is current. Keep or save the local copy, or discard and check out current.";
+    public bool RequiresModifiedDiscardWarning => IsModified || IsConflict || snapshot.Evaluation is null || snapshot.Evaluation.Issue == EvaluationIssue.Unreadable;
     public string Status => !HasWorkingCopy ? snapshot.Document.Status.ToString()
         : snapshot.Evaluation?.Issue == EvaluationIssue.Missing ? "Local file missing"
-        : HasWarning ? WorkingState is { } state ? $"{state} (unverified)" : "State unavailable"
+        : snapshot.Evaluation?.Issue == EvaluationIssue.Unreadable ? WorkingState is { } state ? $"{state} (unverified)" : "State unavailable"
         : WorkingState?.ToString() ?? "State not evaluated";
     public string CurrentHash => snapshot.Evaluation?.CurrentHash is { } hash ? hash[..Math.Min(16, hash.Length)] + "…" : "Not available";
     public string ContentsComparison => snapshot.Evaluation?.Issue != EvaluationIssue.None ? "Local contents could not be checked."
-        : IsModified ? "Local contents differ from the checked-out version." : "Local contents match the checked-out version.";
+        : IsModified || IsConflict ? "Local contents differ from the checked-out version." : "Local contents match the checked-out version.";
     public bool HasWorkingCopy => snapshot.WorkingCopy is not null;
     public bool CanCheckOut => !HasWorkingCopy && snapshot.Document.Status == WorkingCopyState.Available;
     public bool CanOpen => HasWorkingCopy && snapshot.WorkspaceWarning is null;
@@ -48,6 +58,9 @@ public sealed class DocumentListItemViewModel
     public AsyncCommand OpenCommand { get; }
     public AsyncCommand DiscardCommand { get; }
     public AsyncCommand CheckInCommand { get; }
+    public AsyncCommand OpenLatestCommand { get; }
+    public AsyncCommand SaveLocalCommand { get; }
+    public AsyncCommand KeepLocalCommand { get; }
 }
 
 public sealed class MainViewModel : ObservableViewModel
@@ -125,6 +138,19 @@ public sealed class MainViewModel : ObservableViewModel
         SetMessage(action switch { "checkout" => "Checking out document…", "checkin" => "Checking in document…", "discard" => "Discarding local checkout…", _ => "Opening local copy…" });
         try
         {
+            if (action == "savecopy")
+            {
+                var destination = dialogs.SelectLocalCopyDestination(row.FileName);
+                if (destination is null) { SetMessage("Save cancelled. Your local edits have been kept."); return; }
+                await workflow.SaveLocalCopyAsync(row.Id, destination);
+                SetMessage("Local copy saved. The checkout and its edits remain intact.");
+                return;
+            }
+            if (action == "keep")
+            {
+                SetMessage("Your local edits have been kept. The checkout remains active.");
+                return;
+            }
             var allowModified = false;
             if (action == "discard")
             {
@@ -143,7 +169,8 @@ public sealed class MainViewModel : ObservableViewModel
             switch (action)
             {
                 case "checkout": await workflow.CheckOutAsync(row.Id); break;
-                case "checkin": cleanupWarning = await workflow.CheckInAsync(row.Id); break;
+                case "checkin": cleanupWarning = (await workflow.CheckInWithResultAsync(row.Id)).Message; break;
+                case "latest": await workflow.OpenLatestAsync(row.Id); break;
                 case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id, allowModified: allowModified); break;
                 case "open": await workflow.OpenAsync(row.Id); break;
             }
@@ -153,6 +180,7 @@ public sealed class MainViewModel : ObservableViewModel
                 "checkout" => $"{row.FileName} checked out. Open the local copy to edit it.",
                 "checkin" => $"{row.FileName} checked in as {Documents.Single(x => x.Id == row.Id).Version}. The previous version is retained.",
                 "discard" => $"Checkout discarded for {row.FileName}. The source file is unchanged.",
+                "latest" => "Opened a separate read-only copy of the latest version. Your checkout is unchanged.",
                 _ => $"Opened {row.FileName} in its default Windows application."
             });
         }

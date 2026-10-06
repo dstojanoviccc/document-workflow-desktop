@@ -16,21 +16,21 @@
      <DataGrid.Columns>
       <DataGridTemplateColumn Header="Document" Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding LogicalName}" FontWeight="SemiBold"/><TextBlock Text="{Binding FileName}" Foreground="#64748B" FontSize="12" Margin="0,4,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
       <DataGridTextColumn ElementStyle="{StaticResource CenteredCellText}" Header="Version" Binding="{Binding Version}" Width="75"/>
-      <DataGridTemplateColumn Header="Working State" Width="190"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" VerticalAlignment="Center"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#F0F2F5"/><Style.Triggers><DataTrigger Binding="{Binding HasWorkingCopy}" Value="True"><Setter Property="Background" Value="#E8F0FA"/></DataTrigger><DataTrigger Binding="{Binding IsModified}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger><DataTrigger Binding="{Binding HasWarning}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding Status}" Foreground="#24354A" FontSize="11"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTemplateColumn Header="Working State" Width="190"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="10" Padding="10,4" HorizontalAlignment="Left" VerticalAlignment="Center"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#F0F2F5"/><Style.Triggers><DataTrigger Binding="{Binding HasWorkingCopy}" Value="True"><Setter Property="Background" Value="#E8F0FA"/></DataTrigger><DataTrigger Binding="{Binding IsModified}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger><DataTrigger Binding="{Binding IsConflict}" Value="True"><Setter Property="Background" Value="#FFE3D5"/></DataTrigger><DataTrigger Binding="{Binding HasWarning}" Value="True"><Setter Property="Background" Value="#FFF0D7"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding Status}" Foreground="#24354A" FontSize="11"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
       <DataGridTextColumn ElementStyle="{StaticResource CenteredCellText}" Header="Updated" Binding="{Binding Updated}" Width="155"/>
       <DataGridTemplateColumn Header="Actions" Width="360"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Center">
        <Button Content="Check Out" Command="{Binding CheckOutCommand}" Visibility="{Binding CanCheckOut, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
-       <Button Content="Open" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}" Visibility="{Binding HasWorkingCopy, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
+       <Button Content="{Binding OpenLabel}" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}" Visibility="{Binding HasWorkingCopy, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
        <Button Content="Check in" Command="{Binding CheckInCommand}" Visibility="{Binding CanCheckIn, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
        <Button Content="Discard Checkout" Command="{Binding DiscardCommand}" Visibility="{Binding HasWorkingCopy, Converter={StaticResource BoolVisibility}}" Padding="8,6" Margin="0,0,6,0"/>
-       <Button Content="View Details" Command="{Binding ViewDetailsCommand}" Padding="8,6"/>
+       <Button Content="{Binding RecoveryLabel}" Command="{Binding ViewDetailsCommand}" Padding="8,6"/>
       </StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
      </DataGrid.Columns>
     </DataGrid>
     <Border Grid.Row="2" Visibility="{Binding DetailsVisible, Converter={StaticResource BoolVisibility}}" Background="#F4F6F8" Padding="16" Margin="0,16,0,0" MaxHeight="220">
      <ScrollViewer VerticalScrollBarVisibility="Auto">
       <Grid>
-       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
        <StackPanel Margin="0,0,16,0">
         <TextBlock Text="{Binding SelectedDocument.LogicalName}" FontWeight="SemiBold"/>
@@ -55,6 +55,6 @@
     </Border>
    </Grid>
   </Border>
-  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 4 • local check-in and immutable versions" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64748B" AutomationProperties.AutomationId="LoadStatus"/><TextBlock Text="Phase 5 • conflict protection and interrupted-operation recovery" Foreground="#64748B" FontSize="11" Margin="0,5,0,0"/></StackPanel>
  </Grid>
 </Window>
