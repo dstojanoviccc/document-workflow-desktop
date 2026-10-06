@@ -69,6 +69,15 @@ public sealed class CheckInTests : IDisposable
         var newCheckout = Assert.Single(await Service().ListAsync());
         Assert.Equal(2, newCheckout.WorkingCopy!.BaseVersion);
         Assert.Equal(WorkingCopyState.Unchanged, newCheckout.Evaluation!.State);
+        await File.AppendAllTextAsync(path, "third version edit");
+        Assert.Null(await Service().CheckInAsync(document.Id));
+        await using var reopened = new AppDbContext(Options);
+        var third = await reopened.Versions.SingleAsync(x => x.VersionNumber == 3);
+        Assert.Equal(2, third.BaseVersion);
+        Assert.Equal(3, (await reopened.Documents.SingleAsync()).CurrentVersion);
+        Assert.Equal(edited, await File.ReadAllBytesAsync(Versions.Resolve(document.Id, 2, document.FileName)));
+        Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(SourceRoot, document.FileName)));
+        Assert.Equal(versions[0].FileHash, (await reopened.Versions.SingleAsync(x => x.VersionNumber == 1)).FileHash);
     }
     [Theory]
     [InlineData("unchanged")]
