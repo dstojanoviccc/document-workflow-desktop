@@ -10,6 +10,31 @@ namespace DocumentWorkflow.Tests;
 public sealed class HistoryTests : IDisposable
 {
     private readonly ConflictEnvironment env = new();
+    [Fact]
+    public async Task History_window_constructs_and_lays_out_on_a_WPF_thread()
+    {
+        await env.InitializeAsync();
+        var vm = new HistoryViewModel(env.Document.Id, env.Service());
+        await vm.RefreshAsync();
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var window = new HistoryWindow(vm);
+                var content = Assert.IsAssignableFrom<System.Windows.FrameworkElement>(window.Content);
+                content.Measure(new System.Windows.Size(1050, 790));
+                content.Arrange(new System.Windows.Rect(0, 0, 1050, 790));
+                Assert.True(content.ActualHeight > 0);
+                window.Close();
+            }
+            catch (Exception error) { failure = error; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)));
+        Assert.Null(failure);
+    }
     private async Task CreateThreeVersionsAsync()
     {
         await env.InitializeAsync();

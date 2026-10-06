@@ -17,7 +17,7 @@
   <DockPanel Grid.Row="3" Margin="0,8,0,6"><Button Content="Open selected version" Command="{Binding OpenVersionCommand}" DockPanel.Dock="Right"/><TextBlock Text="Version metadata • select and copy text below" VerticalAlignment="Center" FontWeight="SemiBold"/></DockPanel>
   <TextBox Grid.Row="4" Text="{Binding VersionDetails, Mode=OneWay}" AutomationProperties.AutomationId="VersionMetadata"/>
   <StackPanel Grid.Row="5" Margin="0,14,0,6"><TextBlock Text="Workflow timeline" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding AuditNotice}" Foreground="#64748B" TextWrapping="Wrap"/><TextBlock Text="{Binding EmptyEvents}" Foreground="#64748B"/></StackPanel>
-  <DataGrid Grid.Row="6" ItemsSource="{Binding Events}" SelectedItem="{Binding SelectedEvent}" RowHeight="Auto" AutomationProperties.AutomationId="WorkflowTimeline">
+  <DataGrid Grid.Row="6" ItemsSource="{Binding Events}" SelectedItem="{Binding SelectedEvent}" RowHeight="NaN" AutomationProperties.AutomationId="WorkflowTimeline">
    <DataGrid.Columns><DataGridTextColumn Header="Time (local)" Binding="{Binding Timestamp}" Width="175"/><DataGridTextColumn Header="Event" Binding="{Binding Label}" Width="330"/><DataGridTextColumn Header="Context" Binding="{Binding Context}" Width="*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="4"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn></DataGrid.Columns>
   </DataGrid>
   <TextBox Grid.Row="7" Text="{Binding EventDetails, Mode=OneWay}" Margin="0,6,0,0"/>
