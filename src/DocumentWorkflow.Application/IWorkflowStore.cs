@@ -15,7 +15,7 @@ public interface IWorkflowSession : IAsyncDisposable
     IReadOnlyList<DocumentVersion> Versions { get; }
     void Add(WorkingCopy copy);
     void AddVersion(DocumentVersion version);
-    Task<bool> AppendEventAsync(WorkflowEvent value, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    Task<bool> AppendEventAsync(WorkflowEvent value, CancellationToken cancellationToken = default);
     void RemoveWorkingCopy();
     Task CommitAsync(CancellationToken cancellationToken = default);
 }
