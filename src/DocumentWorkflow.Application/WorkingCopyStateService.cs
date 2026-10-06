@@ -32,7 +32,8 @@ public sealed class WorkingCopyStateService(IWorkspaceService workspace, IFileHa
                         return Missing(document.Id);
                     var current = await hashes.HashAsync(copy.LocalPath, cancellationToken).ConfigureAwait(false);
                     var state = string.Equals(current, copy.LastKnownHash, StringComparison.OrdinalIgnoreCase)
-                        ? WorkingCopyState.Unchanged : WorkingCopyState.Modified;
+                        ? WorkingCopyState.Unchanged : copy.BaseVersion != document.CurrentVersion
+                            ? WorkingCopyState.Conflict : WorkingCopyState.Modified;
                     if (reliable.TryGetValue(key, out var previous) && previous != state)
                         logger.LogInformation("Working state changed for {DocumentId}: {PreviousState} to {CurrentState}", document.Id, previous, state);
                     reliable[key] = state;

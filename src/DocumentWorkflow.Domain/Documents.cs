@@ -40,6 +40,14 @@ public sealed class DocumentRecord
         UpdatedAt = createdAt;
         Status = WorkingCopyState.Available;
     }
+    public void PublishCompetingVersion(int expectedCurrent, int newVersion, DateTime createdAt)
+    {
+        if (expectedCurrent != CurrentVersion || newVersion != checked(CurrentVersion + 1))
+            throw new InvalidOperationException("A competing publication must advance the authoritative current version exactly once.");
+        CurrentVersion = newVersion;
+        UpdatedAt = createdAt;
+        // An existing checkout retains its original base and workflow status.
+    }
 }
 
 public sealed class DocumentVersion

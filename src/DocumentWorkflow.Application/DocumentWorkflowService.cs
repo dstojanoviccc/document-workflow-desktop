@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DocumentWorkflow.Application;
 
-public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSource source, IWorkspaceService workspace,
+public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocumentSource source, IWorkspaceService workspace,
     IFileHashService hashes, ILogger<DocumentWorkflowService> logger, IWorkingCopyOpener opener, WorkingCopyStateService? evaluator = null,
     IVersionContentStore? versions = null) : IDocumentWorkflowService
 {
@@ -79,10 +79,13 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             throw new WorkflowException("The local file could not be opened. Check its permissions and install or choose a default application for this file type in Windows.", error);
         }
     }
-    public Task<string?> CheckInAsync(Guid documentId, CancellationToken cancellationToken = default) =>
+    public async Task<string?> CheckInAsync(Guid documentId, CancellationToken cancellationToken = default) =>
+        (await CheckInWithResultAsync(documentId, cancellationToken)).Message;
+
+    public Task<CheckInResult> CheckInWithResultAsync(Guid documentId, CancellationToken cancellationToken = default) =>
         Task.Run(() => CheckInCoreAsync(documentId, cancellationToken), cancellationToken);
 
-    private async Task<string?> CheckInCoreAsync(Guid documentId, CancellationToken cancellationToken)
+    private async Task<CheckInResult> CheckInCoreAsync(Guid documentId, CancellationToken cancellationToken)
     {
         logger.LogInformation("Check-in started for {DocumentId}", documentId);
         var content = versions ?? throw new WorkflowException("Version storage is not configured.");
@@ -98,10 +101,15 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             var evaluation = await states.EvaluateAsync(document, copy, cancellationToken);
             if (evaluation.Issue != EvaluationIssue.None)
                 throw new WorkflowException(evaluation.Warning ?? "The working file cannot be read. Your checkout has been kept.");
+            if (copy.BaseVersion != document.CurrentVersion)
+            {
+                var edits = evaluation.State == WorkingCopyState.Conflict;
+                logger.LogWarning("Stale checkout blocked for {DocumentId}: base {BaseVersion}, current {CurrentVersion}", documentId, copy.BaseVersion, document.CurrentVersion);
+                return new(false, new(copy.BaseVersion, document.CurrentVersion, copy.LocalPath, edits),
+                    $"The document advanced from v{copy.BaseVersion} to v{document.CurrentVersion}. Your local copy has been kept. Inspect latest, save your copy or explicitly discard the stale checkout.");
+            }
             if (evaluation.State != WorkingCopyState.Modified)
                 throw new WorkflowException("The working copy is unchanged. No new version was created.");
-            if (copy.BaseVersion != document.CurrentVersion)
-                throw new WorkflowException("The checkout base no longer matches the current version. Your edits have been kept; conflict resolution is not available yet.");
             next = checked(document.CurrentVersion + 1);
             var actual = await content.CreateAsync(document.Id, next, document.FileName, copy.LocalPath, evaluation.CurrentHash!, cancellationToken);
             prepared = true;
@@ -125,9 +133,9 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
                 logger.LogWarning(error, "Check-in committed but local staged file cleanup failed for {DocumentId}", documentId);
-                return "Check-in succeeded, but a local .discard file remains. Close the editor and remove that leftover file. The new version is safely stored.";
+                return new(true, Message: "Check-in succeeded, but a local .discard file remains. Refresh will attempt conservative recovery. The new version is safely stored.");
             }
-            return null;
+            return new(true);
         }
         catch (Exception error)
         {
@@ -150,7 +158,7 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             await using var session = await store.BeginAsync(documentId, cancellationToken);
             var copy = session.WorkingCopy ?? throw new WorkflowException("This document has no active checkout to discard.");
             var evaluation = await states.EvaluateAsync(session.Document, copy, cancellationToken);
-            if (!allowModified && (evaluation.State == WorkingCopyState.Modified || evaluation.Issue == EvaluationIssue.Unreadable))
+            if (!allowModified && (evaluation.State is WorkingCopyState.Modified or WorkingCopyState.Conflict || evaluation.Issue == EvaluationIssue.Unreadable))
                 throw new WorkflowException("The local copy contains edits or could not be verified. Review the modified-file warning and explicitly confirm discard before continuing.");
             using var deletion = workspace.StageDeletion(documentId, session.Document.FileName, copy.LocalPath);
             session.RemoveWorkingCopy();
