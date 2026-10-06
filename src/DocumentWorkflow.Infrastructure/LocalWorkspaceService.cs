@@ -81,6 +81,11 @@ public sealed class LocalWorkspaceService : IWorkspaceService
     private sealed class StagedDeletion(string path, string staged, bool moved) : IStagedDeletion
     {
         public string StagedPath => staged;
+        public IDisposable AcquireReadLock()
+        {
+            SafePaths.RejectLinks(staged);
+            return new FileStream(staged, FileMode.Open, FileAccess.Read, FileShare.Read);
+        }
         private bool completed;
         public void Complete()
         {

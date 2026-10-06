@@ -13,6 +13,7 @@ public interface IWorkspaceService
 public interface IStagedDeletion : IDisposable
 {
     string StagedPath { get; }
+    IDisposable AcquireReadLock();
     void Complete();
 }
 

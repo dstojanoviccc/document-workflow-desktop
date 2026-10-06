@@ -108,7 +108,7 @@ public sealed class DocumentWorkflowService(IWorkflowStore store, IDocumentSourc
             // Restore this file if metadata commit fails. Verify it again after rename so an edit
             // between artifact preparation and staging cannot be silently lost.
             using var deletion = workspace.StageDeletion(document.Id, document.FileName, copy.LocalPath);
-            await using (var locked = new FileStream(deletion.StagedPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true))
+            using (var locked = deletion.AcquireReadLock())
             {
                 if (!string.Equals(await hashes.HashAsync(deletion.StagedPath, cancellationToken), actual, StringComparison.OrdinalIgnoreCase))
                     throw new WorkflowException("The working file changed during check-in. Your edits have been kept. Close the editor, Refresh and retry.");
