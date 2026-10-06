@@ -5,3 +5,13 @@
 *.db-shm
 *.db-wal
 TestResults/
+artifacts/
+*.user
+*.suo
+*.pfx
+*.snk
+workspace/
+versions/
+recovery/
+logs/
+*.log
