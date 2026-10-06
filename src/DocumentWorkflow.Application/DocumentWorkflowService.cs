@@ -5,7 +5,7 @@ namespace DocumentWorkflow.Application;
 
 public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocumentSource source, IWorkspaceService workspace,
     IFileHashService hashes, ILogger<DocumentWorkflowService> logger, IWorkingCopyOpener opener, WorkingCopyStateService? evaluator = null,
-    IVersionContentStore? versions = null) : IDocumentWorkflowService
+    IVersionContentStore? versions = null, IWorkflowRecovery? recovery = null) : IDocumentWorkflowService
 {
     private readonly WorkingCopyStateService states = evaluator ?? new(workspace, hashes, logger);
     public async Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default)
@@ -14,9 +14,17 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
         var evaluated = new List<DocumentSnapshot>(documents.Count);
         foreach (var item in documents)
         {
-            if (item.WorkingCopy is null) { evaluated.Add(item); continue; }
-            var result = await states.EvaluateAsync(item.Document, item.WorkingCopy, cancellationToken).ConfigureAwait(false);
-            evaluated.Add(item with { Evaluation = result, WorkspaceWarning = result.Warning });
+            var current = item;
+            string? recoveryWarning = null;
+            if (recovery is not null)
+            {
+                await using var session = await store.BeginAsync(item.Document.Id, cancellationToken);
+                recoveryWarning = await recovery.RecoverAsync(session.Document, session.WorkingCopy, session.Versions, cancellationToken);
+                current = new(session.Document, session.WorkingCopy);
+            }
+            if (current.WorkingCopy is null) { evaluated.Add(current with { WorkspaceWarning = recoveryWarning }); continue; }
+            var result = await states.EvaluateAsync(current.Document, current.WorkingCopy, cancellationToken).ConfigureAwait(false);
+            evaluated.Add(current with { Evaluation = result, WorkspaceWarning = result.Warning ?? recoveryWarning });
         }
         return evaluated;
     }

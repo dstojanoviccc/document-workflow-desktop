@@ -133,6 +133,7 @@ public sealed class CheckInTests : IDisposable
         private sealed class Session(IWorkflowSession inner) : IWorkflowSession
         {
             public DocumentRecord Document => inner.Document;
+            public IReadOnlyList<DocumentVersion> Versions => inner.Versions;
             public WorkingCopy? WorkingCopy => inner.WorkingCopy;
             public void Add(WorkingCopy copy) => inner.Add(copy);
             public void AddVersion(DocumentVersion version) => inner.AddVersion(version);

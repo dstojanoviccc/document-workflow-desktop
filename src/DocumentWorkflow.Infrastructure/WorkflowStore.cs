@@ -26,13 +26,15 @@ public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWo
             var document = await db.Documents.SingleOrDefaultAsync(x => x.Id == documentId, cancellationToken)
                 ?? throw new WorkflowException("The document no longer exists. Refresh the library.");
             var copy = await db.WorkingCopies.SingleOrDefaultAsync(x => x.DocumentId == documentId, cancellationToken);
-            return new Session(db, transaction, document, copy);
+            var versions = await db.Versions.Where(x => x.DocumentId == documentId).ToListAsync(cancellationToken);
+            return new Session(db, transaction, document, copy, versions);
         }
         catch { await db.DisposeAsync(); throw; }
     }
-    private sealed class Session(AppDbContext db, IDbContextTransaction transaction, DocumentRecord document, WorkingCopy? copy) : IWorkflowSession
+    private sealed class Session(AppDbContext db, IDbContextTransaction transaction, DocumentRecord document, WorkingCopy? copy, IReadOnlyList<DocumentVersion> versions) : IWorkflowSession
     {
         public DocumentRecord Document => document;
+        public IReadOnlyList<DocumentVersion> Versions => versions;
         public WorkingCopy? WorkingCopy { get; private set; } = copy;
         public void AddVersion(DocumentVersion version) => db.Versions.Add(version);
         public void Add(WorkingCopy value)

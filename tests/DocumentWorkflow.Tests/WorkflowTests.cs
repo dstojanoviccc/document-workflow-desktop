@@ -213,6 +213,7 @@ public sealed class WorkflowTests : IDisposable
         private sealed class FailingSession(IWorkflowSession session) : IWorkflowSession
         {
             public DocumentRecord Document => session.Document;
+            public IReadOnlyList<DocumentVersion> Versions => session.Versions;
             public WorkingCopy? WorkingCopy => session.WorkingCopy;
             public void Add(WorkingCopy copy) => session.Add(copy);
             public void AddVersion(DocumentVersion version) => session.AddVersion(version);
