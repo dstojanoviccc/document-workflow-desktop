@@ -18,18 +18,18 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
     public void NotifyCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
-public sealed class AsyncCommand(Func<Task> execute, Action<Exception> onError) : ICommand
+public sealed class AsyncCommand(Func<Task> execute, Action<Exception> onError, Func<bool>? canExecute = null) : ICommand
 {
     private bool running;
     public event EventHandler? CanExecuteChanged;
-    public bool CanExecute(object? parameter) => !running;
+    public bool CanExecute(object? parameter) => !running && (canExecute?.Invoke() ?? true);
     public async void Execute(object? parameter)
     {
         await ExecuteAsync();
     }
     public async Task ExecuteAsync()
     {
-        if (running) return;
+        if (!CanExecute(null)) return;
         running = true;
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         try { await execute(); }

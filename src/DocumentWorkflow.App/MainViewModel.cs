@@ -16,6 +16,7 @@ public sealed class DocumentListItemViewModel
         CheckOutCommand = new AsyncCommand(() => run(this, "checkout"), onError);
         OpenCommand = new AsyncCommand(() => run(this, "open"), onError);
         DiscardCommand = new AsyncCommand(() => run(this, "discard"), onError);
+        CheckInCommand = new AsyncCommand(() => run(this, "checkin"), onError, () => CanCheckIn);
     }
     public Guid Id => snapshot.Document.Id;
     public string LogicalName => snapshot.Document.LogicalName;
@@ -34,6 +35,7 @@ public sealed class DocumentListItemViewModel
     public bool HasWorkingCopy => snapshot.WorkingCopy is not null;
     public bool CanCheckOut => !HasWorkingCopy && snapshot.Document.Status == WorkingCopyState.Available;
     public bool CanOpen => HasWorkingCopy && snapshot.WorkspaceWarning is null;
+    public bool CanCheckIn => HasWorkingCopy && IsModified && !HasWarning && snapshot.Evaluation?.Issue == EvaluationIssue.None;
     public bool HasWarning => snapshot.WorkspaceWarning is not null;
     public string Warning => snapshot.WorkspaceWarning ?? "";
     public string Updated => snapshot.Document.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm");
@@ -45,6 +47,7 @@ public sealed class DocumentListItemViewModel
     public AsyncCommand CheckOutCommand { get; }
     public AsyncCommand OpenCommand { get; }
     public AsyncCommand DiscardCommand { get; }
+    public AsyncCommand CheckInCommand { get; }
 }
 
 public sealed class MainViewModel : ObservableViewModel
@@ -119,7 +122,7 @@ public sealed class MainViewModel : ObservableViewModel
     {
         if (IsBusy) return;
         Busy(true);
-        SetMessage(action switch { "checkout" => "Checking out document…", "discard" => "Discarding local checkout…", _ => "Opening local copy…" });
+        SetMessage(action switch { "checkout" => "Checking out document…", "checkin" => "Checking in document…", "discard" => "Discarding local checkout…", _ => "Opening local copy…" });
         try
         {
             var allowModified = false;
@@ -140,6 +143,7 @@ public sealed class MainViewModel : ObservableViewModel
             switch (action)
             {
                 case "checkout": await workflow.CheckOutAsync(row.Id); break;
+                case "checkin": cleanupWarning = await workflow.CheckInAsync(row.Id); break;
                 case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id, allowModified: allowModified); break;
                 case "open": await workflow.OpenAsync(row.Id); break;
             }
@@ -147,6 +151,7 @@ public sealed class MainViewModel : ObservableViewModel
             SetMessage(cleanupWarning ?? action switch
             {
                 "checkout" => $"{row.FileName} checked out. Open the local copy to edit it.",
+                "checkin" => $"{row.FileName} checked in as {Documents.Single(x => x.Id == row.Id).Version}. The previous version is retained.",
                 "discard" => $"Checkout discarded for {row.FileName}. The source file is unchanged.",
                 _ => $"Opened {row.FileName} in its default Windows application."
             });
