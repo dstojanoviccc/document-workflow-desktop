@@ -138,6 +138,17 @@ public sealed class RecoveryTests : IDisposable
     }
     private sealed class Factory(DbContextOptions<DocumentWorkflow.Infrastructure.AppDbContext> options) : IDbContextFactory<DocumentWorkflow.Infrastructure.AppDbContext>
     { public DocumentWorkflow.Infrastructure.AppDbContext CreateDbContext() => new(options); }
+    [Fact]
+    public async Task Competing_publication_completion_error_preserves_the_committed_artifact_and_checkout()
+    {
+        await env.InitializeAsync();
+        var service = env.Service(store: new CompletionFailingStore(new DocumentWorkflow.Infrastructure.WorkflowStore(new Factory(env.Options))));
+        await service.PublishCompetingVersionAsync(env.Document.Id, env.SourcePath);
+        var snapshot = Assert.Single(await env.Service().ListAsync());
+        Assert.Equal(2, snapshot.Document.CurrentVersion);
+        Assert.Equal(1, snapshot.WorkingCopy!.BaseVersion);
+        Assert.True(File.Exists(env.Versions.Resolve(env.Document.Id, 2, env.Document.FileName)));
+    }
     private sealed class CompletionFailingStore(IWorkflowStore inner) : IWorkflowStore
     {
         public Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default) => inner.ListAsync(cancellationToken);

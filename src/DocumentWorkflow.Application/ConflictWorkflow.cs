@@ -41,14 +41,16 @@ public sealed partial class DocumentWorkflowService
         Task.Run(async () =>
         {
             var content = versions ?? throw new WorkflowException("Version storage is not configured.");
-            await using var session = await store.BeginAsync(documentId, cancellationToken);
-            var document = session.Document;
-            if (session.WorkingCopy is { } copy && string.Equals(Path.GetFullPath(contentPath), Path.GetFullPath(copy.LocalPath), StringComparison.OrdinalIgnoreCase))
-                throw new WorkflowException("The competing writer must use its own content, not this active checkout.");
-            var next = checked(document.CurrentVersion + 1);
+            DocumentRecord? document = null;
+            var next = 0;
             var created = false;
             try
             {
+                await using var session = await store.BeginAsync(documentId, cancellationToken);
+                document = session.Document;
+                if (session.WorkingCopy is { } copy && string.Equals(Path.GetFullPath(contentPath), Path.GetFullPath(copy.LocalPath), StringComparison.OrdinalIgnoreCase))
+                    throw new WorkflowException("The competing writer must use its own content, not this active checkout.");
+                next = checked(document.CurrentVersion + 1);
                 var hash = await hashes.HashAsync(contentPath, cancellationToken);
                 var actual = await content.CreateAsync(documentId, next, document.FileName, contentPath, hash, cancellationToken);
                 created = true;
@@ -58,9 +60,18 @@ public sealed partial class DocumentWorkflowService
                 await session.CommitAsync(cancellationToken);
                 logger.LogInformation("Competing writer published {DocumentId} version {VersionNumber}", documentId, next);
             }
-            catch
+            catch (Exception error)
             {
-                if (created) content.Delete(documentId, next, document.FileName);
+                if (created)
+                {
+                    await using var verification = await store.BeginAsync(documentId, CancellationToken.None);
+                    if (verification.Versions.Any(x => x.VersionNumber == next))
+                    {
+                        logger.LogWarning(error, "Competing publication confirmed from metadata after completion error for {DocumentId}", documentId);
+                        return;
+                    }
+                    content.Delete(documentId, next, document!.FileName);
+                }
                 throw;
             }
         }, cancellationToken);
