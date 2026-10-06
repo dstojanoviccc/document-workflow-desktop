@@ -4,7 +4,7 @@ A .NET/WPF desktop application demonstrating document checkout, local editing, v
 
 ## Overview
 
-This fresh, generic public implementation is built in incremental, tested milestones. **Phase 5 implements optimistic concurrency, explicit conflict recovery and conservative interrupted-operation reconciliation**, building on immutable local check-in and SHA-256 modification detection.
+This fresh, generic public implementation is built in incremental, tested milestones. **Phase 6 adds immutable version history, verified historical inspection and a document workflow timeline**, building on optimistic concurrency, explicit conflict recovery and SHA-256 modification detection.
 
 Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. Their copies in the application output directory simulate a central document repository. Checkout creates a separate physical working file; external editors never open the central file through the application.
 
@@ -26,6 +26,8 @@ Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. The
 - Explicit Check in for verified Modified copies, new version artifacts, atomic current-version advancement and checkout completion.
 - Derived Conflict state for modified stale checkouts, with keep, save-copy, inspect-latest and confirmed-discard choices.
 - Startup/Refresh recovery of tracked staging and quarantine of unreferenced managed version artifacts.
+- Per-document immutable version history, current/base indicators, compact hashes and copyable metadata.
+- Verified isolated historical inspection and append-only typed workflow events with friendly timeline labels.
 
 Example: **Available → Check Out → Unchanged → Edit/save externally → Modified → Discard → Available**. Restoring the exact original bytes returns a working copy to Unchanged.
 
@@ -62,7 +64,7 @@ Key components:
 
 Phase 1 databases are retained. Placeholder initial-version hashes are replaced with real demo-file hashes without changing document IDs or creating new versions. Existing content hashes and checkout metadata are preserved. No schema change was needed in Phases 2 or 3.
 
-Phase 4 adds the nullable `DocumentVersion.BaseVersion` column through an additive EF migration. Existing version rows are retained. New versions record their origin, SHA-256, creation time and deterministic next number; the document's updated time equals the new version's creation time. The existing unique document/version index remains in force. The app has no version-history screen; the current version is shown in the row and Details, with complete metadata retained in SQLite.
+Phase 4 adds the nullable `DocumentVersion.BaseVersion` column through an additive EF migration. Existing version rows are retained. New versions record their origin, SHA-256, creation time and deterministic next number; the document's updated time equals the new version's creation time. The existing unique document/version index remains in force. Phase 6 exposes the persisted versions through the history window reached from Details.
 
 ### Check-in storage and transaction
 
@@ -254,13 +256,13 @@ Desktop verification used an isolated temporary database and confirmed launch, c
 
 ## Roadmap
 
-After Phase 5 review:
+After Phase 6 review:
 
-- Phase 6 recommendation: a scoped version-history view and audit/event presentation after explicit approval.
+- Phase 7 recommendation: Windows packaging and repeatable release verification, after explicit approval.
 - Later: check-in retry and idempotency behavior.
-- Later: crash recovery improvements and audit history.
+- Later: stronger crash recovery and durable retry identities.
 
-Phase 5 does not include remote APIs, cloud storage, automatic check-in, FileSystemWatcher, merge/force-overwrite workflows, arbitrary external ingestion, version-history UI or installer/release work. Content comparison uses whole-file SHA-256; evaluation cost grows with file size. Stronger recovery and durable retry identities remain future work. Phase 6 has not started.
+The current application does not include remote APIs, cloud storage, automatic check-in, FileSystemWatcher, merge/force-overwrite workflows, arbitrary external ingestion or installer/release work. Content comparison uses whole-file SHA-256; evaluation cost grows with file size. Stronger recovery and durable retry identities remain future work. Phase 6 is complete; Phase 7 has not started.
 
 ## Screenshots
 
@@ -298,7 +300,7 @@ tests/DocumentWorkflow.Tests/WorkflowViewModelTests.cs
 
 ### Phase 5 verification and manual acceptance
 
-The full suite has **85 passing tests: all 68 existing cases plus 17 Phase 5 cases**. Conflict tests cover valid XLSX competing publication, structured stale-base outcomes, restart, simultaneous stale attempts, inspection/export exact bytes, overwrite refusal, cancelled/confirmed discard, unchanged stale copies, missing/unreadable stale copies, active-source rejection and stale UI commands. Recovery tests cover durable uncommitted artifacts, interrupted staging, committed metadata before UI refresh, unknown-file preservation, idempotence, locked staging, recovery/check-in serialization, missing committed storage and completion-reporting errors after check-in and competing publication.
+The Phase 5 baseline had **85 passing tests: all 68 earlier cases plus 17 Phase 5 cases**. Conflict tests cover valid XLSX competing publication, structured stale-base outcomes, restart, simultaneous stale attempts, inspection/export exact bytes, overwrite refusal, cancelled/confirmed discard, unchanged stale copies, missing/unreadable stale copies, active-source rejection and stale UI commands. Recovery tests cover durable uncommitted artifacts, interrupted staging, committed metadata before UI refresh, unknown-file preservation, idempotence, locked staging, recovery/check-in serialization, missing committed storage and completion-reporting errors after check-in and competing publication.
 
 WPF smoke verification used a temporary driver outside the repository to seed five documents, check out/edit a valid XLSX and publish v2 through the real competing-writer service. The desktop showed current v2, base v1, Conflict, no Check in action, differing hashes and all recovery controls. The stronger discard warning was inspected and No was selected; Conflict remained and a package read confirmed the local edit text survived. Open-latest/export/confirmed-discard byte safety is automated; these final actions were not executed through desktop automation.
 
@@ -358,3 +360,103 @@ tests/DocumentWorkflow.Tests/ConflictTests.cs
 tests/DocumentWorkflow.Tests/RecoveryTests.cs
 tests/DocumentWorkflow.Tests/WorkflowTests.cs
 ```
+
+## Phase 6 — version history and workflow timeline
+
+### Baseline and design decision
+
+Implementation began at `3df997e` with a clean working tree, **85 passing tests**, and a build with **0 warnings / 0 errors**. The existing WPF/MVVM → Application → EF Core SQLite/filesystem → Domain architecture is retained. `DocumentVersion` already persisted version ID, document ID, version number, UTC creation timestamp, SHA-256, change note and optional base version; document metadata retained the current pointer and checkout metadata retained the base and creation timestamp. There was no persisted workflow audit model. Logs and deleted checkout rows could not faithfully retain discard or recovery history, so a small additive audit table was justified. It does not drive workflow state and is not event sourcing.
+
+### Version projection and historical inspection
+
+`WorkflowStore.GetHistoryAsync(documentId)` uses exactly **three SQL reads in one transaction**: document/optional checkout, all document versions ordered by version number descending, and document events ordered by UTC timestamp descending with ID as a deterministic tie-breaker. There is no query per version. The application maps each version to `VersionHistoryItem(DocumentVersion Version, bool IsCurrent, string ArtifactPath)` and returns `DocumentHistoryDetails(Context, Versions, Events)`. A checkout is evaluated through the existing canonical hash evaluator. The history query does not perform filesystem recovery or change workflow metadata.
+
+The history window is reached through **View Details → Version history**. Its two separate sections answer which immutable versions exist and which workflow actions occurred. The context banner shows current version, checkout base and evaluated local state; verified Conflict uses the existing warm warning color. Versions show current badges, local display timestamps, 16-character hashes, base versions and honest origins. Only known persisted notes identify initial demo creation, local check-in or the competing writer; other notes show **Not recorded**, while the exact note remains available. Selected metadata exposes full SHA-256, UTC timestamp, artifact path, document/version IDs, base and current/historical status in a read-only, selectable text box. Events have friendly labels and selectable technical details. Both sections scroll; an empty timeline explains that earlier events are not reconstructed.
+
+`OpenVersionAsync(documentId, versionNumber)` validates that the selected version exists in persisted metadata, resolves packaged v1 or managed v2+ storage, creates a unique copy under `workspace/.inspection/{document-id}/v{number}/{inspection-id}/{filename}`, and hashes that copy against the recorded SHA-256 before shell opening. Missing or mismatched content is not opened. No checkout, current-pointer update, audit event or managed-edit state is created. Inspection copies are read-only files and are outside the exact managed working path. Even if an editor later changes an inspection copy, the workflow does not track those changes. Historical artifact and active checkout bytes are preserved. Windows file association is still required.
+
+An open history window refreshes after library workflow actions, Refresh and main-window activation, retaining its document and selected version. Closing the window releases the active history view model. The existing main navigation and workflow actions remain in place.
+
+### Audit model, migration and deduplication
+
+`WorkflowEvent` contains `Id`, `DocumentId`, typed `Type`, UTC `OccurredAt`, nullable `VersionNumber`, `BaseVersion`, `CheckoutAt`, optional short `Details`, and `DeduplicationKey`. Checkout scope uses its existing persisted UTC creation timestamp, since the prior model has no separate checkout ID. Version/base numbers provide context without changing existing version entities. The model stores no serialized application state.
+
+Additive migration **`20261006114618_WorkflowEvents`** creates the table, a unique `(DocumentId, DeduplicationKey)` index, a restricted document foreign key, and SQLite triggers rejecting UPDATE/DELETE. EF SaveChanges also rejects modified/deleted events. Existing versions, IDs, hashes, notes, current pointers and checkouts are preserved. **No events are backfilled.** Fresh first-run document metadata creation is audited once; upgrading an existing database invents no creation events.
+
+| Event | Evidence and deduplication |
+| --- | --- |
+| DocumentCreated | New first-run document metadata, key `created`; original document timestamp. |
+| CheckoutCreated | Successful checkout transaction; key includes checkout timestamp ticks, with base and timestamp scope. |
+| CheckInCompleted | Same transaction as new immutable version/current pointer/checkout removal; key contains new version ID, timestamp equals version creation. |
+| CompetingVersionPublished | Same transaction as competing version/current pointer; key contains new version ID. |
+| ConflictDetected | First successful hash evaluation proving edits against a newer current version; key contains checkout timestamp ticks and current version. Timestamp is observation time, not guessed edit time. |
+| CheckoutDiscarded / ConflictDiscarded | Same transaction as authorized discard; verified Conflict selects ConflictDiscarded, otherwise CheckoutDiscarded. Key contains checkout timestamp ticks. Cancelled or rejected discard writes neither event. |
+| RecoveryPerformed | A completed staging restore or exact-artifact quarantine move, never merely a missing/locked-file warning. Each actual action has a fresh key and its short result detail. |
+
+Sessions check both pending and committed keys; SQLite writer serialization and the unique index protect cross-instance deduplication. Repeated startup, Refresh, activation and failed stale check-in do not multiply conflict events for the same checkout/current pair. A later current version may produce a new verified observation. **WorkingCopyModified is deliberately not persisted**: refresh-time comparisons cannot establish when an external edit actually happened. The existing Modified state remains hash-derived. Inspection, Keep local edits, export and cancelled confirmations create no audit events.
+
+Authoritative metadata transitions and their events commit or roll back together. Recovery file moves and SQLite are not one physical transaction: a crash or audit-commit failure after a completed move can leave a gap in recovery history. The app preserves recovered bytes and does not fabricate an event on a later no-op refresh. This remains a local audit, not tamper-proof forensic evidence; direct unsupported storage/database changes and machine clock changes are outside its guarantees.
+
+### Verification and desktop acceptance
+
+Final automated result: **113 passed, 0 failed, 0 skipped** — all **85 existing tests** plus **28 Phase 6 cases**. Final build: **0 warnings / 0 errors**. EF reports no pending model changes; the phase diff passes `git diff --check`.
+
+- **History:** v1/v2/v3 ordering, exactly one current badge, persisted IDs after service/store recreation, initial and v2 isolated opening with/without an active checkout, byte/metadata preservation even after inspection edits, rejected unknown/tampered versions, base/current conflict context, honest origins, compact/full hashes and the real Open command.
+- **Queries and UI:** three bounded history SQL reads, Details command integration, friendly timeline labels, immediate context/timeline update after confirmed discard, selected metadata, and actual WPF history-window construction/content layout on an STA thread. Desktop testing found and fixed an invalid Auto row-height value; the real-window regression test now covers loading the XAML.
+- **Audit:** creation/checkout/check-in timestamps and scopes, competing publication, failed-commit rollback, rejected operations, repeated modified Refresh/activation, conflict deduplication across restart/Refresh/check-in with and without recovery enabled, a newer current version producing a new observation, and no inferred conflict for unchanged/missing/unreadable copies.
+- **Discard/recovery/persistence:** cancelled and confirmed normal/conflict discard, real staging restore/quarantine with preserved bytes and no repeated events, warning-only recovery producing no event, cross-document append rejection, duplicate keys within one transaction and after restart, append-only protection through EF and SQL, additive migration preserving legacy data with an empty audit, and idempotent fresh seeding.
+
+Desktop acceptance used disposable temporary data prepared through real application services: checkout v1 → valid XLSX edit → check-in v2 → checkout v2/edit → trusted competing publication v3. The WPF library and history window showed v3/v2/v1, Current, full metadata and one base-v2/current-v3 conflict event. Opening v1 launched Excel **Read-Only** with the original generic catalogue. All three stored hashes, current v3, checkout base v2 and the active local-edit hash remained unchanged. The disposable conflict checkout was discarded through the real workflow service, then desktop activation refreshed the already-open history window to Available / No active checkout and one ConflictDiscarded event. A fresh **desktop Check Out** produced base v3, matching hashes and Unchanged. The test workbook and application were closed afterward. Final discard confirmation via a desktop Yes click was not used; cancellation/confirmation and immediate refresh are covered by actual view-model/service tests. No normal user data was used and no README screenshots were added.
+
+### Phase 6 implementation files and commits
+
+Files added/changed relative to `3df997e`:
+
+```text
+README.md
+src/DocumentWorkflow.App/Commands.cs
+src/DocumentWorkflow.App/HistoryViewModel.cs
+src/DocumentWorkflow.App/HistoryWindow.xaml
+src/DocumentWorkflow.App/HistoryWindow.xaml.cs
+src/DocumentWorkflow.App/MainViewModel.cs
+src/DocumentWorkflow.App/MainWindow.xaml
+src/DocumentWorkflow.App/MainWindow.xaml.cs
+src/DocumentWorkflow.Application/ConflictWorkflow.cs
+src/DocumentWorkflow.Application/DocumentWorkflowService.cs
+src/DocumentWorkflow.Application/HistoryWorkflow.cs
+src/DocumentWorkflow.Application/IDocumentWorkflowService.cs
+src/DocumentWorkflow.Application/IWorkflowRecovery.cs
+src/DocumentWorkflow.Application/IWorkflowStore.cs
+src/DocumentWorkflow.Domain/WorkflowEvent.cs
+src/DocumentWorkflow.Infrastructure/AppDbContext.cs
+src/DocumentWorkflow.Infrastructure/DatabaseInitializer.cs
+src/DocumentWorkflow.Infrastructure/LocalWorkflowRecovery.cs
+src/DocumentWorkflow.Infrastructure/Migrations/20261006114618_WorkflowEvents.Designer.cs
+src/DocumentWorkflow.Infrastructure/Migrations/20261006114618_WorkflowEvents.cs
+src/DocumentWorkflow.Infrastructure/Migrations/AppDbContextModelSnapshot.cs
+src/DocumentWorkflow.Infrastructure/WorkflowStore.cs
+tests/DocumentWorkflow.Tests/AuditTests.cs
+tests/DocumentWorkflow.Tests/CheckInTests.cs
+tests/DocumentWorkflow.Tests/HistoryQueryTests.cs
+tests/DocumentWorkflow.Tests/HistoryTests.cs
+tests/DocumentWorkflow.Tests/RecoveryTests.cs
+tests/DocumentWorkflow.Tests/WorkflowTests.cs
+```
+
+Logical implementation commits:
+
+- `d181166` — feat(history): query versions and open verified isolated inspection copies
+- `af5312e` — feat(audit): persist append-only workflow transitions and verified observations
+- `6f874e7` — feat(ui): present version history and document workflow timeline
+- `00879d3` — test(history): verify immutable inspection and details presentation
+- `8c8f34c` — test(audit): cover scoped transitions recovery deduplication and rollback
+- `bf84379` — fix(ui): load automatic timeline row heights in the WPF history window
+- `c672ea0` — fix(audit): deduplicate pending events within a workflow transaction
+
+The final documentation commit is recorded in Git history. No new repository, checkout root or architecture was introduced.
+
+### Limitations and Phase 7 recommendation
+
+Older audit actions are unavailable rather than inferred. Initial v1 remains the packaged source, with inspection hash checking to detect unexpected replacement. Inspection copies accumulate locally; cleanup/retention is deferred. Audit history is intentionally unpaged for this small catalogue, with no event filters or search subsystem. Checkout correlation uses the existing creation timestamp rather than a durable independent operation ID. External editors, clock changes and direct unsupported storage changes remain outside the app's control. Recovery audit has the filesystem/database gap described above.
+
+**Stop after Phase 6 for review.** Recommended Phase 7 scope, only after approval: choose Windows packaging/publish strategy, repeatable clean-machine installation/upgrade validation, backup/migration guidance, then release automation and portfolio documentation. No installer, publishing, CI/CD, release, watcher, remote backend, cloud sync, branding or auto-update work is implemented in Phase 6.
