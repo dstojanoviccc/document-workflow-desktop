@@ -52,9 +52,8 @@ public sealed class LocalWorkflowRecovery(LocalWorkspaceService workspace, Local
         Attempt(() =>
         {
             var directory = Path.GetDirectoryName(Path.GetDirectoryName(storage.Resolve(document.Id, 2, document.FileName)))!;
-            if (!Directory.Exists(directory)) return;
             var referenced = versions.Select(x => x.VersionNumber).ToHashSet();
-            foreach (var versionDirectory in Directory.EnumerateDirectories(directory))
+            foreach (var versionDirectory in Directory.Exists(directory) ? Directory.EnumerateDirectories(directory) : [])
             {
                 var name = Path.GetFileName(versionDirectory);
                 if (!int.TryParse(name, out var number) || number < 2 || name != number.ToString(System.Globalization.CultureInfo.InvariantCulture)) continue;

@@ -138,6 +138,23 @@ public sealed class ConflictTests : IDisposable
         public string? SelectLocalCopyDestination(string fileName) => Destination;
     }
     public void Dispose() => env.Dispose();
+    [Fact]
+    public async Task Stale_modified_ui_command_receives_conflict_and_opens_recovery_details()
+    {
+        await env.InitializeAsync();
+        ConflictEnvironment.Edit(env.WorkingPath, "local edits");
+        var vm = new MainViewModel(env.Service(), new Dialogs(), NullLogger<MainViewModel>.Instance);
+        await vm.RefreshAsync();
+        var staleRow = Assert.Single(vm.Documents);
+        Assert.True(staleRow.CanCheckIn);
+        await env.PublishAsync();
+        await staleRow.CheckInCommand.ExecuteAsync();
+        Assert.True(vm.DetailsVisible);
+        Assert.True(vm.SelectedDocument!.IsConflict);
+        Assert.Contains("advanced from v1 to v2", vm.Message);
+        Assert.False(Assert.Single(vm.Documents).CheckInCommand.CanExecute(null));
+        Assert.True(File.Exists(env.WorkingPath));
+    }
 }
 
 internal sealed class ConflictEnvironment : IDisposable
@@ -153,7 +170,7 @@ internal sealed class ConflictEnvironment : IDisposable
     public string RecoveryRoot => Path.Combine(Root, "recovery");
     public DbContextOptions<AppDbContext> Options => new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={Path.Combine(Root, "documents.db")};Pooling=False").Options;
     public AppDbContext Db() => new(Options);
-    public DocumentWorkflowService Service(bool recover = true) => new(new WorkflowStore(new Factory(Options)), new DemoDocumentSource(SourceRoot), Workspace,
+    public DocumentWorkflowService Service(bool recover = true, IWorkflowStore? store = null) => new(store ?? new WorkflowStore(new Factory(Options)), new DemoDocumentSource(SourceRoot), Workspace,
         new FileHashService(), NullLogger<DocumentWorkflowService>.Instance, Opener, versions: Versions,
         recovery: recover ? new LocalWorkflowRecovery(Workspace, Versions, RecoveryRoot, NullLogger<LocalWorkflowRecovery>.Instance) : null);
     public async Task InitializeAsync()

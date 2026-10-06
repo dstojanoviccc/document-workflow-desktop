@@ -166,15 +166,17 @@ public sealed class MainViewModel : ObservableViewModel
                 }
             }
             string? cleanupWarning = null;
+            CheckInResult? checkInResult = null;
             switch (action)
             {
                 case "checkout": await workflow.CheckOutAsync(row.Id); break;
-                case "checkin": cleanupWarning = (await workflow.CheckInWithResultAsync(row.Id)).Message; break;
+                case "checkin": checkInResult = await workflow.CheckInWithResultAsync(row.Id); cleanupWarning = checkInResult.Message; break;
                 case "latest": await workflow.OpenLatestAsync(row.Id); break;
                 case "discard": cleanupWarning = await workflow.DiscardAsync(row.Id, allowModified: allowModified); break;
                 case "open": await workflow.OpenAsync(row.Id); break;
             }
             await LoadAsync();
+            if (checkInResult?.Conflict is not null) ShowDetails(Documents.Single(x => x.Id == row.Id));
             SetMessage(cleanupWarning ?? action switch
             {
                 "checkout" => $"{row.FileName} checked out. Open the local copy to edit it.",

@@ -107,4 +107,52 @@ public sealed class RecoveryTests : IDisposable
         Assert.False(Directory.Exists(env.RecoveryRoot));
     }
     public void Dispose() => env.Dispose();
+    [Fact]
+    public async Task Completion_error_after_durable_commit_does_not_remove_a_valid_version()
+    {
+        await env.InitializeAsync();
+        ConflictEnvironment.Edit(env.WorkingPath, "durably committed edits");
+        var edits = await File.ReadAllBytesAsync(env.WorkingPath);
+        var service = env.Service(store: new CompletionFailingStore(new DocumentWorkflow.Infrastructure.WorkflowStore(new Factory(env.Options))));
+        Assert.True((await service.CheckInWithResultAsync(env.Document.Id)).Succeeded);
+        await env.Service().ReconcileAsync();
+        Assert.Equal(edits, await File.ReadAllBytesAsync(env.Versions.Resolve(env.Document.Id, 2, env.Document.FileName)));
+        var snapshot = Assert.Single(await env.Service().ListAsync());
+        Assert.Equal(2, snapshot.Document.CurrentVersion);
+        Assert.Null(snapshot.WorkingCopy);
+        Assert.False(File.Exists(env.WorkingPath));
+    }
+    [Fact]
+    public async Task Missing_entire_committed_storage_directory_reports_warning_without_changing_metadata()
+    {
+        await env.InitializeAsync();
+        await env.PublishAsync();
+        var path = env.Versions.Resolve(env.Document.Id, 2, env.Document.FileName);
+        File.Delete(path);
+        Directory.Delete(Path.GetDirectoryName(path)!);
+        Directory.Delete(Path.GetDirectoryName(Path.GetDirectoryName(path))!);
+        var snapshot = Assert.Single(await env.Service().ListAsync());
+        Assert.Contains("committed v2 artifact is missing", snapshot.WorkspaceWarning);
+        Assert.Equal(2, snapshot.Document.CurrentVersion);
+        Assert.True(File.Exists(env.WorkingPath));
+    }
+    private sealed class Factory(DbContextOptions<DocumentWorkflow.Infrastructure.AppDbContext> options) : IDbContextFactory<DocumentWorkflow.Infrastructure.AppDbContext>
+    { public DocumentWorkflow.Infrastructure.AppDbContext CreateDbContext() => new(options); }
+    private sealed class CompletionFailingStore(IWorkflowStore inner) : IWorkflowStore
+    {
+        public Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default) => inner.ListAsync(cancellationToken);
+        public async Task<IWorkflowSession> BeginAsync(Guid id, CancellationToken cancellationToken = default) => new Session(await inner.BeginAsync(id, cancellationToken));
+        private sealed class Session(IWorkflowSession inner) : IWorkflowSession
+        {
+            public DocumentRecord Document => inner.Document;
+            public WorkingCopy? WorkingCopy => inner.WorkingCopy;
+            public IReadOnlyList<DocumentVersion> Versions => inner.Versions;
+            public void Add(WorkingCopy copy) => inner.Add(copy);
+            public void AddVersion(DocumentVersion version) => inner.AddVersion(version);
+            public void RemoveWorkingCopy() => inner.RemoveWorkingCopy();
+            public async Task CommitAsync(CancellationToken cancellationToken = default)
+            { await inner.CommitAsync(cancellationToken); throw new IOException("Committed, but completion response interrupted"); }
+            public ValueTask DisposeAsync() => inner.DisposeAsync();
+        }
+    }
 }

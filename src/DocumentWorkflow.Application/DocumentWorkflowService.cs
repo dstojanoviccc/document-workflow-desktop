@@ -149,9 +149,31 @@ public sealed partial class DocumentWorkflowService(IWorkflowStore store, IDocum
         {
             if (prepared && !committed)
             {
-                try { content.Delete(documentId, next, document!.FileName); }
-                catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException)
-                { logger.LogError(cleanupError, "Unpublished version cleanup failed for {DocumentId}; retry will not overwrite it", documentId); }
+                try
+                {
+                    // Commit reporting can fail after durability. The disposed failed session is
+                    // no longer authoritative: consult committed metadata before deleting any artifact.
+                    await using var verification = await store.BeginAsync(documentId, CancellationToken.None);
+                    var published = verification.Versions.SingleOrDefault(x => x.VersionNumber == next);
+                    if (published is not null)
+                    {
+                        logger.LogWarning(error, "Check-in commit confirmed from metadata after completion error for {DocumentId}", documentId);
+                        if (verification.WorkingCopy is null && workspace.Exists(documentId, document!.FileName, workspace.Resolve(documentId, document.FileName)))
+                        {
+                            using var leftover = workspace.StageDeletion(documentId, document.FileName, workspace.Resolve(documentId, document.FileName));
+                            bool matches;
+                            using (leftover.AcquireReadLock()) matches = string.Equals(await hashes.HashAsync(leftover.StagedPath), published.FileHash, StringComparison.OrdinalIgnoreCase);
+                            if (matches) leftover.Complete(); // Only remove bytes already stored in the committed version.
+                        }
+                        return new(true, Message: "Check-in was committed. Completion reporting was interrupted; Refresh to verify the current version. Any additional local edits have been retained.");
+                    }
+                    content.Delete(documentId, next, document!.FileName);
+                }
+                catch (Exception cleanupError)
+                {
+                    // If metadata cannot be verified, preserve the artifact for conservative reconciliation.
+                    logger.LogError(cleanupError, "Check-in recovery deferred for {DocumentId}; no unverified artifact is removed", documentId);
+                }
             }
             logger.LogError(error, "Check-in failed for {DocumentId}", documentId);
             if (error is WorkflowException or OperationCanceledException) throw;
