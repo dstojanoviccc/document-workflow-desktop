@@ -8,6 +8,8 @@ public interface IWorkspaceService
     bool Exists(Guid documentId, string fileName, string storedPath);
     void Delete(Guid documentId, string fileName, string storedPath);
     IStagedDeletion StageDeletion(Guid documentId, string fileName, string storedPath);
+    Task ExportAsync(Guid documentId, string fileName, string storedPath, string destination, CancellationToken cancellationToken = default);
+    Task<string> CreateInspectionAsync(Guid documentId, int version, string fileName, string sourcePath, CancellationToken cancellationToken = default);
 }
 
 public interface IStagedDeletion : IDisposable

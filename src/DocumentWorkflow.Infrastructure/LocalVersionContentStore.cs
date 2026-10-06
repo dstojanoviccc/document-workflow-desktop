@@ -7,6 +7,7 @@ namespace DocumentWorkflow.Infrastructure;
 public sealed class LocalVersionContentStore : IVersionContentStore
 {
     public string Root { get; }
+    public bool IsManagedPath(string path) => Inside(Path.GetFullPath(path), Root);
     private readonly IFileHashService hashes;
     public LocalVersionContentStore(string root, string workspaceRoot, string sourceRoot, IFileHashService hashes)
     {

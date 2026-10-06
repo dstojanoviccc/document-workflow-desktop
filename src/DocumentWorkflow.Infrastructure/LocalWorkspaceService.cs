@@ -5,12 +5,14 @@ namespace DocumentWorkflow.Infrastructure;
 public sealed class LocalWorkspaceService : IWorkspaceService
 {
     public string Root { get; }
+    private readonly string sourceDirectory;
     public LocalWorkspaceService(string root, string sourceRoot)
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         if (Root.Equals(Path.GetPathRoot(Root), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Use a dedicated directory for the workspace, not a drive root.");
         var source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceRoot));
+        sourceDirectory = source;
         if (Inside(Root, source) || Inside(source, Root))
             throw new ArgumentException("The workspace and demo repository must be separate directories.");
         SafePaths.RejectLinks(Root);
@@ -56,6 +58,45 @@ public sealed class LocalWorkspaceService : IWorkspaceService
         return target;
     }
     public bool Exists(Guid documentId, string fileName, string storedPath) => File.Exists(Validate(documentId, fileName, storedPath));
+    public Task ExportAsync(Guid documentId, string fileName, string storedPath, string destination, CancellationToken cancellationToken = default)
+    {
+        var input = Validate(documentId, fileName, storedPath);
+        var output = Path.GetFullPath(destination);
+        if (Inside(output, Root) || Inside(output, sourceDirectory))
+            throw new IOException("Save the copy outside managed workspace and source directories.");
+        return CopyExactAsync(input, output, cancellationToken);
+    }
+    public async Task<string> CreateInspectionAsync(Guid documentId, int version, string fileName, string sourcePath, CancellationToken cancellationToken = default)
+    {
+        SafePaths.ValidateFileName(fileName);
+        var directory = Path.Combine(Root, ".inspection", documentId.ToString("N"), "v" + version, Guid.NewGuid().ToString("N"));
+        SafePaths.RejectLinks(directory);
+        Directory.CreateDirectory(directory);
+        var target = Path.Combine(directory, fileName);
+        await CopyExactAsync(sourcePath, target, cancellationToken).ConfigureAwait(false);
+        File.SetAttributes(target, File.GetAttributes(target) | FileAttributes.ReadOnly);
+        return target;
+    }
+    private static async Task CopyExactAsync(string inputPath, string outputPath, CancellationToken cancellationToken)
+    {
+        SafePaths.RejectLinks(inputPath);
+        SafePaths.RejectLinks(outputPath);
+        var created = false;
+        try
+        {
+            await using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+            await using var output = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
+            created = true;
+            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            output.Flush(true);
+        }
+        catch
+        {
+            if (created) File.Delete(outputPath);
+            throw;
+        }
+    }
     public void Delete(Guid documentId, string fileName, string storedPath)
     {
         var path = Validate(documentId, fileName, storedPath);

@@ -10,6 +10,8 @@ public interface IDocumentWorkflowService
     Task OpenAsync(Guid documentId, CancellationToken cancellationToken = default);
     Task<string?> DiscardAsync(Guid documentId, CancellationToken cancellationToken = default, bool allowModified = false);
     Task ReconcileAsync(CancellationToken cancellationToken = default);
+    Task SaveLocalCopyAsync(Guid documentId, string destination, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task OpenLatestAsync(Guid documentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 public interface IWorkingCopyOpener
 {
