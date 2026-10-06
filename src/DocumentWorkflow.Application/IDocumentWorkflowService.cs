@@ -12,6 +12,8 @@ public interface IDocumentWorkflowService
     Task ReconcileAsync(CancellationToken cancellationToken = default);
     Task SaveLocalCopyAsync(Guid documentId, string destination, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task OpenLatestAsync(Guid documentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<DocumentHistoryDetails> GetHistoryAsync(Guid documentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task OpenVersionAsync(Guid documentId, int versionNumber, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 public interface IWorkingCopyOpener
 {

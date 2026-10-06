@@ -7,6 +7,20 @@ namespace DocumentWorkflow.Infrastructure;
 
 public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWorkflowStore
 {
+    public async Task<DocumentHistory> GetHistoryAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var context = await (from document in db.Documents.AsNoTracking()
+                             join copy in db.WorkingCopies.AsNoTracking() on document.Id equals copy.DocumentId into copies
+                             from copy in copies.DefaultIfEmpty()
+                             where document.Id == documentId
+                             select new DocumentSnapshot(document, copy, null, null)).SingleOrDefaultAsync(cancellationToken)
+            ?? throw new WorkflowException("The document no longer exists. Refresh the library.");
+        var versions = await db.Versions.AsNoTracking().Where(x => x.DocumentId == documentId)
+            .OrderByDescending(x => x.VersionNumber).ToListAsync(cancellationToken);
+        return new(context, versions);
+    }
     public async Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
