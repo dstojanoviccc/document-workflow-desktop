@@ -93,6 +93,7 @@ public class WorkflowViewModelTests
         public Task<IReadOnlyList<DocumentSnapshot>> ListAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<DocumentSnapshot>>([new(Document, copy, Warning,
                 copy is null ? null : new WorkingCopyEvaluation(WorkingCopyState.Unchanged, copy.LastKnownHash))]);
+        public Task<string?> CheckInAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task CheckOutAsync(Guid id, CancellationToken cancellationToken = default)
         {
             if (Fail) throw new WorkflowException("The demo source file is missing.");

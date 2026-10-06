@@ -62,6 +62,7 @@ public class ActivationTests
             }
             finally { active--; }
         }
+        public Task<string?> CheckInAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task CheckOutAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task OpenAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<string?> DiscardAsync(Guid id, CancellationToken cancellationToken = default, bool allowModified = false) => Task.FromResult<string?>(null);

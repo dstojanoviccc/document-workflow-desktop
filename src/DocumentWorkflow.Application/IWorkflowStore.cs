@@ -12,6 +12,7 @@ public interface IWorkflowSession : IAsyncDisposable
     DocumentRecord Document { get; }
     WorkingCopy? WorkingCopy { get; }
     void Add(WorkingCopy copy);
+    void AddVersion(DocumentVersion version);
     void RemoveWorkingCopy();
     Task CommitAsync(CancellationToken cancellationToken = default);
 }

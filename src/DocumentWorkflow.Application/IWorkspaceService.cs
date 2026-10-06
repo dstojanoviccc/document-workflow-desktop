@@ -12,6 +12,7 @@ public interface IWorkspaceService
 
 public interface IStagedDeletion : IDisposable
 {
+    string StagedPath { get; }
     void Complete();
 }
 

@@ -34,6 +34,7 @@ public sealed class WorkflowStore(IDbContextFactory<AppDbContext> factory) : IWo
     {
         public DocumentRecord Document => document;
         public WorkingCopy? WorkingCopy { get; private set; } = copy;
+        public void AddVersion(DocumentVersion version) => db.Versions.Add(version);
         public void Add(WorkingCopy value)
         {
             if (WorkingCopy is not null) throw new WorkflowException("This document already has an active working copy.");

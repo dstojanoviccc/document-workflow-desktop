@@ -80,6 +80,7 @@ public sealed class LocalWorkspaceService : IWorkspaceService
     }
     private sealed class StagedDeletion(string path, string staged, bool moved) : IStagedDeletion
     {
+        public string StagedPath => staged;
         private bool completed;
         public void Complete()
         {
