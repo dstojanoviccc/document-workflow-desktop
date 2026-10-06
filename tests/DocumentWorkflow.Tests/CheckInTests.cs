@@ -194,6 +194,38 @@ public sealed class CheckInTests : IDisposable
     }
     private sealed class NoDialogs : DocumentWorkflow.App.IUserDialogService
     { public bool ConfirmDiscard(string name, bool edits) => false; }
+    [Fact]
+    public async Task Database_failure_after_sql_writes_rolls_back_version_and_checkout_together()
+    {
+        var path = await InitializeAsync();
+        var edits = await File.ReadAllBytesAsync(path);
+        var options = new DbContextOptionsBuilder<AppDbContext>(Options).AddInterceptors(new FailAfterSave()).Options;
+        await Assert.ThrowsAsync<WorkflowException>(() => Service(new WorkflowStore(new Factory(options))).CheckInAsync(document.Id));
+        await using var db = new AppDbContext(Options);
+        Assert.Equal(1, await db.Versions.CountAsync());
+        Assert.Equal(1, (await db.Documents.SingleAsync()).CurrentVersion);
+        Assert.Single(await db.WorkingCopies.ToListAsync());
+        Assert.Equal(edits, await File.ReadAllBytesAsync(path));
+        Assert.False(File.Exists(Versions.Resolve(document.Id, 2, document.FileName)));
+    }
+    private sealed class FailAfterSave : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public override ValueTask<int> SavedChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesCompletedEventData eventData,
+            int result, CancellationToken cancellationToken = default) => throw new IOException("Failure after SQL writes, before transaction commit");
+    }
+    [Theory]
+    [InlineData(WorkingCopyState.Unchanged, EvaluationIssue.None, false)]
+    [InlineData(WorkingCopyState.Modified, EvaluationIssue.None, true)]
+    [InlineData(WorkingCopyState.Modified, EvaluationIssue.Unreadable, false)]
+    [InlineData(null, EvaluationIssue.Missing, false)]
+    public void Check_in_enablement_requires_verified_modified_content(WorkingCopyState? state, EvaluationIssue issue, bool enabled)
+    {
+        var copy = new WorkingCopy(document.Id, "isolated.xlsx", 1, "baseline");
+        var evaluation = new WorkingCopyEvaluation(state, null, issue, issue == EvaluationIssue.None ? null : "Cannot evaluate");
+        var row = new DocumentWorkflow.App.DocumentListItemViewModel(new(document, copy, evaluation.Warning, evaluation), _ => { }, (_, _) => Task.CompletedTask, _ => { });
+        Assert.Equal(enabled, row.CanCheckIn);
+        Assert.Equal(enabled, row.CheckInCommand.CanExecute(null));
+    }
     private sealed class InterceptingContent(IVersionContentStore inner, string path, string fault) : IVersionContentStore
     {
         public string Resolve(Guid id, int version, string name) => inner.Resolve(id, version, name);
