@@ -4,7 +4,7 @@ A .NET/WPF desktop application demonstrating document checkout, local editing, v
 
 ## Overview
 
-This fresh, generic public implementation is built in incremental, tested milestones. **Phase 4 implements explicit local check-in and immutable version creation**, building on checkout, Open, discard and SHA-256 modification detection. Conflict resolution remains a roadmap item.
+This fresh, generic public implementation is built in incremental, tested milestones. **Phase 5 implements optimistic concurrency, explicit conflict recovery and conservative interrupted-operation reconciliation**, building on immutable local check-in and SHA-256 modification detection.
 
 Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. Their copies in the application output directory simulate a central document repository. Checkout creates a separate physical working file; external editors never open the central file through the application.
 
@@ -24,6 +24,8 @@ Five valid, generic XLSX, DOCX and PDF fixtures are shipped in `demo-data/`. The
 - Detailed checkout metadata, restrained WPF styling, MVVM, DI, hosting and structured local logs.
 - Automated domain, SQLite, workspace, hashing, workflow, concurrency and view-model tests.
 - Explicit Check in for verified Modified copies, new version artifacts, atomic current-version advancement and checkout completion.
+- Derived Conflict state for modified stale checkouts, with keep, save-copy, inspect-latest and confirmed-discard choices.
+- Startup/Refresh recovery of tracked staging and quarantine of unreferenced managed version artifacts.
 
 Example: **Available → Check Out → Unchanged → Edit/save externally → Modified → Discard → Available**. Restoring the exact original bytes returns a working copy to Unchanged.
 
@@ -47,12 +49,13 @@ Dependencies flow from App to Infrastructure to Application to Domain. Domain ha
 
 Key components:
 
-- `DocumentWorkflowService`: checkout, Open, discard, library snapshots and startup reconciliation.
+- `DocumentWorkflowService`: checkout, Open, discard, check-in, library snapshots and startup reconciliation; its partial `ConflictWorkflow.cs` contains competing publication and non-destructive recovery actions.
 - `WorkingCopyStateService`: asynchronous local-file evaluation, SHA-256 comparison and safe missing/unreadable results.
 - `WorkflowStore`: SQLite write transactions and atomic document/working-copy metadata changes.
 - `LocalWorkspaceService`: deterministic copy paths, path validation, existence checks and staged deletion.
 - `FileHashService`: reusable streaming SHA-256 hashing.
 - `LocalVersionContentStore` / `IVersionContentStore`: separate immutable version paths, durable copy and verification of stored bytes.
+- `LocalWorkflowRecovery` / `IWorkflowRecovery`: restore active staging, preserve referenced versions and quarantine unreferenced managed artifacts under a SQLite writer lock.
 - `DemoDocumentSource`: safe source-file resolution.
 - `ShellWorkingCopyOpener`: Windows shell file associations.
 - `DatabaseInitializer`: migration, first-run seeding and upgrade of Phase 1 placeholder hashes.
@@ -65,13 +68,56 @@ Phase 4 adds the nullable `DocumentVersion.BaseVersion` column through an additi
 
 v1 uses the packaged source artifact; v2 and later use `DataDirectory/versions/{document-id}/{version-number}/{file-name}`. Check-in never writes to v1 or overwrites a version artifact. Version immutability is enforced by application operations and CreateNew, rather than OS ACLs: manually editing application storage is unsupported.
 
-Check-in runs off the UI thread and begins a serialized SQLite write transaction. It reevaluates through the Phase 3 evaluator, rejects absent/unchanged/missing/unreadable checkouts and checks the checkout base still matches the current version. This base guard preserves edits; full conflict resolution is deferred.
+Check-in runs off the UI thread and begins a serialized SQLite write transaction. It reevaluates through the canonical evaluator, rejects absent/unchanged/missing/unreadable checkouts and checks the persisted checkout base still matches the current version. A stale base returns structured data rather than silently creating another version; explicit recovery choices are described below.
 
 The service copies under a read handle that denies external writing/deletion, flushes the artifact to disk and hashes the stored artifact. It must match the fresh evaluation hash; otherwise the unpublished artifact is removed and the checkout remains. After preparation, the local copy is renamed to the existing reversible `.discard` staging path. Its hash is checked again under a read lock through database commit, detecting edits between copying and staging.
 
 A single SQLite transaction inserts the new version, advances the document and removes active checkout metadata. Before commit, failures roll back database changes, restore the staged working file and remove the artifact created by that attempt. Existing destination artifacts are never removed or overwritten. Only after successful commit is the staged local file deleted. Cleanup failure reports a success-with-cleanup warning; it does not undo the durable version. UI rows refresh immediately to Available at the new version.
 
-Filesystem and SQLite are not one physical transaction. A process/machine crash can leave an unpublished version artifact or staged local file. Retries refuse to overwrite leftover artifacts; inspect the database and preserve any local edits before manual recovery. Automatic crash recovery, durable retry identities and uncertain-commit recovery are deferred. Back up the database, versions directory and working copies together; keep packaged v1 fixtures available. Close external editors before check-in, since incompatible open handles fail safely.
+Filesystem and SQLite are not one physical transaction. A process/machine crash can leave an unpublished version artifact or staged local file. Phase 5 reconciles these at startup and Refresh. Before rollback cleanup after a completion error, check-in and competing publication consult committed version metadata; a durable version is preserved even if completion reporting failed. If metadata cannot be verified, cleanup is deferred rather than deleting an unverified artifact. Back up the database, versions directory and working copies together; keep packaged v1 fixtures available. Close external editors before check-in, since incompatible open handles fail safely.
+
+### Conflict invariant and results
+
+Conflict is derived when an active copy has a successful hash comparison showing local edits **and** `WorkingCopy.BaseVersion != DocumentRecord.CurrentVersion`. Both version numbers come from SQLite; timestamps and filenames do not decide concurrency. No Conflict state is persisted and no new schema migration is needed in Phase 5.
+
+`CheckInWithResultAsync` is the structured application/UI entry point. `CheckInResult` reports success, a message and optional `CheckoutConflict(BaseVersion, CurrentVersion, WorkingPath, HasLocalEdits)`. The Phase 4 `CheckInAsync` entry point remains a compatibility wrapper over the same implementation. A stale-base result keeps metadata and local bytes and creates no version. The UI opens recovery Details on a stale-row check-in attempt.
+
+An unchanged stale copy stays Unchanged: it has no verified local edits, but check-in remains blocked and Details explain the older base. Missing and unreadable copies keep their distinct evaluation issues; they never invent local edits. Last reliable state on read failure remains explicitly unverified. No recovery silently changes the checkout baseline.
+
+Trusted application/test code can simulate another logical writer with `DocumentWorkflowService.PublishCompetingVersionAsync(documentId, writerContentPath)`. This creates and hashes a separate immutable artifact, advances current metadata transactionally through a domain method and leaves any checkout untouched. It rejects using that active checkout as the writer's source. It has no general ingestion UI, networking or fake server.
+
+Transitions:
+
+- Modified v1 checkout + competing v2 publication → Conflict, base v1/current v2; check-in creates no v3.
+- Conflict + keep, dismiss, inspect or export → Conflict with local edits intact.
+- Conflict + cancelled discard → Conflict with local edits intact.
+- Conflict + confirmed discard → Available at current v2; the next checkout uses v2.
+
+### Explicit recovery choices
+
+Choose **Details / Recover** on a stale row. Keep my local edits performs no filesystem or metadata mutation. Open my copy continues to use the checkout. Open latest creates a separate read-only inspection file under `workspace/.inspection/{document-id}/v{number}/{unique-id}/{file-name}` and dispatches that copy through the Windows association, without creating another checkout or exposing the immutable source for editing.
+
+Save local copy uses a Save File dialog and CreateNew copying under restrictive sharing. Cancellation preserves everything; an existing destination is refused even if selected. Destinations inside the workspace, packaged source or version storage are rejected. Export retains exact captured bytes and leaves the checkout active. Inspection copies are retained for now; read-only is an inspection aid, not an OS security guarantee.
+
+Discard local checkout reuses the permanent-loss warning and Phase 3 confirmation guard, including Conflict as edited content. No is the default. No force overwrite, automatic rebase, merge or check-in-anyway option exists.
+
+### Interrupted-operation reconciliation
+
+The database is authoritative for valid version references. Recovery holds the same per-database SQLite writer transaction as check-in, so it cannot quarantine an artifact while a normal publication is preparing it. It examines only known document IDs and exact deterministic managed paths:
+
+| Observed artifact | Recovery action |
+| --- | --- |
+| Active checkout; expected file absent; exact `.discard` exists | Restore staged content to the expected local path without overwrite |
+| Active checkout already has a file; an extra `.discard` exists | Keep active bytes; quarantine the staged copy |
+| No active checkout; exact `.discard` exists | Quarantine staged content; do not recreate an active checkout |
+| Numeric v2+ directory with exact managed filename but no SQLite version reference | Quarantine the artifact, including partially written content |
+| Referenced version artifact | Leave it intact, regardless of current-version pointer |
+| Referenced artifact missing | Warn; retain metadata and request restoration from backup |
+| Unknown filename, directory, document ID or untracked local file | Leave it untouched |
+
+Quarantine moves bytes into `DataDirectory/recovery` with the document ID and a unique name; it does not delete content. Recovery notices include the preserved path and are logged. Locked artifacts or path-validation failures produce guidance and defer recovery until access returns. A repeated Refresh is idempotent. The rule also handles Phase 4 leftovers; no old operation journal is required.
+
+Limits: separate databases must not share storage roots; recovery serialization relies on the shared database. Unknown paths, orphan checkouts without tracking and damaged metadata require manual investigation. Power loss/storage corruption and durable retry identities remain outside this phase. Recovery does not reconstruct missing content, auto-import quarantined files or automatically clean inspection/quarantine directories.
 
 ### Derived working-copy state
 
@@ -91,7 +137,7 @@ Discard first moves the expected local file to a sibling `.discard` staging file
 
 Before confirmation, discard refreshes state. Modified or unverified content uses an explicit warning that local edits will be permanently deleted; No preserves the file and checkout. The service evaluates again before staging deletion and refuses a newly modified file if only the unchanged warning was confirmed. This reduces stale-confirmation risk, but does not lock out an external editor for the entire confirmation/deletion interval.
 
-These operations provide ordinary failure handling, not full crash recovery. If the process or machine stops between filesystem and database steps, an untracked local file or `.discard` file can remain. Startup warns about missing tracked files and never recreates or overwrites them. Advanced recovery is deferred.
+These operations provide ordinary failure handling and conservative recovery of known artifacts. A missing tracked file is not recreated from central content; only its existing tracked `.discard` bytes can be restored. Unknown files and ambiguous data are preserved for manual investigation.
 
 ## Tech Stack
 
@@ -124,6 +170,7 @@ Defaults:
 %LOCALAPPDATA%\DocumentWorkflowDesktop\documents.db
 %LOCALAPPDATA%\DocumentWorkflowDesktop\workspace\{document-id}\{file-name}
 %LOCALAPPDATA%\DocumentWorkflowDesktop\versions\{document-id}\{version-number}\{file-name}
+%LOCALAPPDATA%\DocumentWorkflowDesktop\recovery\{document-id}-{unique-id}-{file-name}
 %LOCALAPPDATA%\DocumentWorkflowDesktop\logs\workflow-yyyy-MM-dd.jsonl
 ```
 
@@ -207,17 +254,17 @@ Desktop verification used an isolated temporary database and confirmed launch, c
 
 ## Roadmap
 
-After Phase 4 review:
+After Phase 5 review:
 
-- Phase 5: competing-version detection and explicit conflict/recovery flows, preserving local edits and immutable artifacts.
+- Phase 6 recommendation: a scoped version-history view and audit/event presentation after explicit approval.
 - Later: check-in retry and idempotency behavior.
 - Later: crash recovery improvements and audit history.
 
-Phase 4 does not include remote APIs, cloud storage, automatic check-in, FileSystemWatcher, merge/force-overwrite workflows, arbitrary external ingestion or installer work. Content comparison uses whole-file SHA-256; evaluation cost grows with file size. Stronger crash recovery remains future work.
+Phase 5 does not include remote APIs, cloud storage, automatic check-in, FileSystemWatcher, merge/force-overwrite workflows, arbitrary external ingestion, version-history UI or installer/release work. Content comparison uses whole-file SHA-256; evaluation cost grows with file size. Stronger recovery and durable retry identities remain future work. Phase 6 has not started.
 
 ## Screenshots
 
-The Phase 3 state labels and hash details have been inspected during desktop verification. Saved screenshots are pending manual acceptance.
+Phase 5 Conflict labels, hash details, recovery controls and permanent-loss confirmation have been inspected during desktop verification. Saved screenshots/marketing polish are deferred.
 
 ## Phase 4 implementation files
 
@@ -247,4 +294,67 @@ tests/DocumentWorkflow.Tests/VersionContentTests.cs
 tests/DocumentWorkflow.Tests/ViewModelTests.cs
 tests/DocumentWorkflow.Tests/WorkflowTests.cs
 tests/DocumentWorkflow.Tests/WorkflowViewModelTests.cs
+```
+
+### Phase 5 verification and manual acceptance
+
+The full suite has **85 passing tests: all 68 existing cases plus 17 Phase 5 cases**. Conflict tests cover valid XLSX competing publication, structured stale-base outcomes, restart, simultaneous stale attempts, inspection/export exact bytes, overwrite refusal, cancelled/confirmed discard, unchanged stale copies, missing/unreadable stale copies, active-source rejection and stale UI commands. Recovery tests cover durable uncommitted artifacts, interrupted staging, committed metadata before UI refresh, unknown-file preservation, idempotence, locked staging, recovery/check-in serialization, missing committed storage and completion-reporting errors after check-in and competing publication.
+
+WPF smoke verification used a temporary driver outside the repository to seed five documents, check out/edit a valid XLSX and publish v2 through the real competing-writer service. The desktop showed current v2, base v1, Conflict, no Check in action, differing hashes and all recovery controls. The stronger discard warning was inspected and No was selected; Conflict remained and a package read confirmed the local edit text survived. Open-latest/export/confirmed-discard byte safety is automated; these final actions were not executed through desktop automation.
+
+To exercise the service-level demo path in a local harness/test with configured services:
+
+```csharp
+await workflow.CheckOutAsync(documentId);
+// Edit/save the managed working file, then prepare a separate valid writer file.
+await workflow.PublishCompetingVersionAsync(documentId, writerContentPath);
+var result = await workflow.CheckInWithResultAsync(documentId);
+// result.Succeeded == false; result.Conflict describes base/current/path/local edits.
+```
+
+The existing application service is the competing-writer path; no SQL edits or fake server are needed. Automated scenarios can be run with:
+
+```powershell
+dotnet test --filter "FullyQualifiedName~ConflictTests|FullyQualifiedName~RecoveryTests"
+```
+
+Manual acceptance with an isolated DataDirectory and a service-prepared conflict:
+
+1. Check out v1, edit/save the local XLSX, then publish competing v2 through the application service above.
+2. Return to the desktop or Refresh; verify Conflict, current v2, base v1 and no Check in action.
+3. Open Details / Recover; verify that local edits still exist. Keep my local edits must leave Conflict unchanged.
+4. Open latest; inspect its v2 content and read-only copy path. Open my copy must still show the original local edits.
+5. Save local copy to a new filename; compare its bytes with the checkout. Cancel a second save, then select an existing filename; verify no overwrite.
+6. Discard local checkout; inspect the permanent-loss warning and choose No. Verify the local file and Conflict remain.
+7. Close external editors, discard again and explicitly choose Yes. Verify Available at v2; a new checkout must contain v2 bytes.
+8. For recovery, use only isolated data: simulate a precommit artifact/staging state as in RecoveryTests, restart or Refresh, and verify restored active edits plus quarantine. A committed v2 artifact must survive reconciliation.
+
+## Phase 5 implementation files
+
+Exact files added or changed from the approved Phase 4 baseline:
+
+```text
+README.md
+src/DocumentWorkflow.App/App.xaml.cs
+src/DocumentWorkflow.App/MainViewModel.cs
+src/DocumentWorkflow.App/MainWindow.xaml
+src/DocumentWorkflow.App/UserDialogService.cs
+src/DocumentWorkflow.Application/CheckInResult.cs
+src/DocumentWorkflow.Application/ConflictWorkflow.cs
+src/DocumentWorkflow.Application/DocumentWorkflowService.cs
+src/DocumentWorkflow.Application/IDocumentWorkflowService.cs
+src/DocumentWorkflow.Application/IVersionContentStore.cs
+src/DocumentWorkflow.Application/IWorkflowRecovery.cs
+src/DocumentWorkflow.Application/IWorkflowStore.cs
+src/DocumentWorkflow.Application/IWorkspaceService.cs
+src/DocumentWorkflow.Application/WorkingCopyStateService.cs
+src/DocumentWorkflow.Domain/Documents.cs
+src/DocumentWorkflow.Infrastructure/LocalVersionContentStore.cs
+src/DocumentWorkflow.Infrastructure/LocalWorkflowRecovery.cs
+src/DocumentWorkflow.Infrastructure/LocalWorkspaceService.cs
+src/DocumentWorkflow.Infrastructure/WorkflowStore.cs
+tests/DocumentWorkflow.Tests/CheckInTests.cs
+tests/DocumentWorkflow.Tests/ConflictTests.cs
+tests/DocumentWorkflow.Tests/RecoveryTests.cs
+tests/DocumentWorkflow.Tests/WorkflowTests.cs
 ```
