@@ -1,0 +1,21 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore DocumentWorkflow.sln
+      - run: dotnet build DocumentWorkflow.sln --configuration ${{ matrix.configuration }} --no-restore -warnaserror
+      - run: dotnet test DocumentWorkflow.sln --configuration ${{ matrix.configuration }} --no-build --no-restore
