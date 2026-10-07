@@ -1,0 +1,39 @@
+name: Tagged Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+      - name: Validate tag against the authoritative version
+        shell: pwsh
+        run: |
+          [xml]$properties = Get-Content Directory.Build.props -Raw
+          $version = $properties.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$' -or $env:RELEASE_TAG -ne "v$version") {
+            throw 'Tag must match Directory.Build.props Version exactly.'
+          }
+      - name: Build, test, publish and package
+        shell: pwsh
+        run: ./scripts/Build-Release.ps1
+      - name: Publish verified tag artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          $assets = @(Get-ChildItem "artifacts/release/$version" -File | Select-Object -ExpandProperty FullName)
+          if ($assets.Count -ne 3) { throw 'Expected installer, ZIP and SHA256SUMS.txt.' }
+          gh release create $env:RELEASE_TAG @assets --verify-tag --title "Document Workflow Desktop $version" --notes-file docs/release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release upload failed.' }
