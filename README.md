@@ -21,18 +21,18 @@ Document editing crosses two persistence systems: a database and a filesystem. T
 
 Modified working copy, ready for explicit check-in:
 
-![Document library with a Modified working copy](docs/assets/modified.png)
+![Document library with a Modified working copy](docs/assets/modified.jpg)
 
 <details>
 <summary>Conflict recovery and version history</summary>
 
 A newer version blocks stale check-in while preserving local edits and recovery choices:
 
-![Conflict with local-edit recovery controls](docs/assets/conflict.png)
+![Conflict with local-edit recovery controls](docs/assets/conflict.jpg)
 
 Immutable versions, the current version and the workflow audit timeline:
 
-![Version history and workflow audit timeline](docs/assets/history.png)
+![Version history and workflow audit timeline](docs/assets/history.jpg)
 
 </details>
 

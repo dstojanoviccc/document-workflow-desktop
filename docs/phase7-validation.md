@@ -36,7 +36,7 @@ This was a binary/version upgrade with unchanged schema. Existing migration/star
 
 ## Public presentation
 
-Three real application captures are stored in `docs/assets`: `modified.png`, `conflict.png`, and `history.png`. Main/recovery captures use the same window size; the existing history window uses its own dimensions. All are lossless PNGs, together under 300 KB. They show generic document names, Modified state, Conflict recovery controls, v1–v3, the Current indicator and typed audit events. Visible fixture paths use a generic evaluation directory without a username or OneDrive path. No unrelated desktop content was saved.
+Three real application captures are stored in `docs/assets`: `modified.jpg`, `conflict.jpg`, and `history.jpg`. Main/recovery captures use the same 1226 × 713 dimensions; the existing history window uses 1036 × 783. The helper's native JPEG bytes are retained without another lossy encoding, together under 300 KB. They show generic document names, Modified state, Conflict recovery controls, v1–v3, the Current indicator and typed audit events. Visible fixture paths use a generic evaluation directory without a username or OneDrive path. No unrelated desktop content was saved.
 
 The screenshot helper initially returned inconsistent foreground captures and stale elements. Resetting its session recovered capture; only images inspected as the intended application were saved. Conflict state was prepared through application services, not fabricated UI or a new production feature.
 
